@@ -44,35 +44,31 @@ Calyx is a mobile application that empowers users to discover, identify, and cur
 
 ### 3.1 User Authentication
 
-#### Sign Up
-- **Required Fields**:
-  - Email address
-  - Password (minimum 8 characters, must include uppercase, lowercase, and number)
+#### Sign Up / Sign In (OAuth)
+- **Primary Authentication Methods**:
+  - Sign in with Apple
+  - Sign in with Google
+  - Sign in with Facebook
+- **Required Setup After OAuth**:
   - Display name
-- **Optional Fields**:
-  - Profile photo
-- **Validation**:
-  - Email format validation
-  - Password strength indicator
-  - Duplicate email checking
-- **Success Flow**: Redirect to onboarding/home screen
+  - Unique username (alphanumeric + underscores, 3-20 characters)
+  - Profile photo (optional, can use OAuth provider photo)
+  - Profile about (one sentence, max 80 characters)
+- **Username Validation**:
+  - Check for uniqueness
+  - No special characters except underscore
+  - Case-insensitive storage but preserves display preference
+- **Success Flow**: 
+  - First-time users: Username creation screen → Onboarding
+  - Returning users: Direct to home screen
+- **Security**:
+  - Email hidden from other users (stored privately)
+  - OAuth tokens securely stored
+  - Biometric authentication option (Face ID/Touch ID)
 
-#### Sign In
-- **Required Fields**:
-  - Email address
-  - Password
-- **Features**:
-  - "Remember Me" toggle
-  - "Forgot Password" link
-  - Biometric authentication (Face ID/Touch ID) after initial login
-- **Error Handling**:
-  - Clear error messages for incorrect credentials
-  - Account lockout after 5 failed attempts (temporary, 15 minutes)
-
-#### Password Reset
-- Email-based password reset flow
-- Secure token generation
-- Password reset link expires after 1 hour
+#### No Password Management Needed
+- OAuth providers handle password security
+- Users manage passwords through Google/Facebook/Apple
 
 ### 3.2 Flower Search
 
@@ -94,33 +90,89 @@ Calyx is a mobile application that empowers users to discover, identify, and cur
 #### Search Results
 - **Display Format**:
   - Grid view (default) or List view toggle
-  - Each result shows:
-    - Flower thumbnail image
-    - Common name
-    - Scientific name (italic, smaller font)
-    - Quick "Save" button icon
+  - **Polaroid Frame Design**:
+    - Each result card styled as a vintage Polaroid
+    - White border around image (thicker bottom for Polaroid aesthetic)
+    - Flower name displayed in "handwritten" style font below image (within Polaroid)
+    - Scientific name in smaller italic text
+    - Subtle shadow for depth
+  - Quick "Save" button (heart icon) in top right corner of Polaroid
+- **Image Optimization for Smooth Scrolling**:
+  - Progressive image loading (blur-up technique)
+  - Thumbnail size: 400x400px for grid view
+  - Image compression: WebP format with JPEG fallback
+  - Lazy loading: Images load as they enter viewport
+  - Preload next batch (20 items) when user scrolls to 80% of current results
+  - Cache images locally for instant re-display
+  - Low network handling:
+    - Show lower resolution preview immediately
+    - Load high-res in background
+    - Skeleton loading placeholders with Polaroid frame
 - **Sorting Options**:
   - Relevance (default)
   - Alphabetical (A-Z)
   - Most popular
+  - Most interactions (new)
 - **Pagination**: Load 20 results at a time with infinite scroll
+  - Smooth scroll performance even on slow networks
+  - Loading indicator: Subtle animated flower icon at bottom
 
 #### Flower Detail View
 When user taps on a search result:
-- **Hero image**: Large, high-quality flower photo
-- **Information sections**:
-  - Common name & scientific name
+- **Hero image**: Large, high-quality flower photo in Polaroid frame style
+- **Back button** (top left)
+- **Share button** (top right)
+- **Scroll for information**:
+  - Common name (large, bold)
+  - Scientific name (italic, below)
+  - Tabbed sections: Overview, Care, Details, Community
+  
+**Overview Tab**:
   - Family classification
   - Description (origin, characteristics)
+  - **Scent description** (new):
+    - Fragrance profile (floral, citrus, sweet, earthy, etc.)
+    - Intensity level (subtle, moderate, strong)
+    - User-contributed scent notes
   - Growing conditions (light, water, soil)
   - Bloom time
   - Height/spread
   - Hardiness zones
-  - Care tips
-- **Action buttons**:
-  - Save to Saved Flowers
+
+**Care Tab**:
+  - Detailed care tips
+  - Common problems & solutions
+  - Best practices
+
+**Details Tab**:
+  - Botanical information
+  - Native region
+  - Additional characteristics
+
+**Community Tab** (new):
+  - **Comments Section**:
+    - User profile photo, username, timestamp
+    - Comment text
+    - Upvote button with count (visible)
+    - Downvote button (hidden count, affects sorting only)
+    - Reply functionality (nested comments)
+  - **Filtering Options**:
+    - Most interactions (upvotes - downvotes, default)
+    - Newest first
+    - Oldest first
+  - **Comment Actions**:
+    - Report inappropriate comments
+    - Edit own comments (within 5 minutes)
+    - Delete own comments
+  - **Engagement**:
+    - "Add a comment" input field at bottom
+    - Character limit: 500 characters
+    - Optional: Attach photo from user's own flower photos
+
+- **Action buttons** (sticky footer):
+  - Save to Collection (prominent, primary button)
+  - Like/Unlike (heart icon with count)
   - Share (iOS share sheet)
-  - Add notes (personal documentation)
 
 ### 3.3 Search History (Catalog Tab)
 
@@ -169,25 +221,55 @@ When user taps on a search result:
 ### 3.5 User Profile
 
 #### Profile Information
-- Display name
-- Email (displayed, not editable in-app)
-- Profile photo
-- Member since date
-- Statistics:
-  - Total flowers searched
-  - Total saved flowers
-  - Collections created
+- **Profile Header** (minimalist, clean design):
+  - **Layout**:
+    - Profile photo (left side, circular, 80pt diameter)
+    - **Catalogue count** (next to profile photo):
+      - Number displayed prominently
+      - Label: "Flowers"
+      - Counts total unique flowers across saved + collections (no duplicates)
+    - **Text section** (right side):
+      - Display name (bold, 18pt)
+      - Username (below, @username format, 14pt, medium gray)
+      - Profile about (one sentence, max 80 characters, 14pt regular)
+  
+- **Privacy Controls**:
+  - Toggle: Make catalogue public/private
+  - Favorites are always public
+  - Individual collections can be set to public/private
+  - Private content only visible to user
+
+- **Profile Sections** (with divider, then tabs):
+  - **Collections Tab**:
+    - Grid of user's collections
+    - Each shows: Cover photo (first flower), name, flower count
+    - Public/private indicator icon
+    - Tap to view collection details
+  - **Catalogue Tab** (new):
+    - All saved flowers in one unified view
+    - Polaroid grid display
+    - Filter by: All, Public only, Private only
+    - Shows total unique flower count
+  - **Favorites Tab**:
+    - Quick access to favorited/liked flowers
+    - Always public
+    - Polaroid grid display
+
+- **Member info**:
+  - Member since date (small text at bottom)
+  - Email hidden from all users (stored privately)
 
 #### Settings
 - Account settings
-  - Change password
-  - Email preferences
+  - Email preferences (notifications)
   - Delete account
+  - Manage OAuth connections
 - App settings
   - Notifications toggle
   - Default view preference (grid/list)
   - Measurement units (metric/imperial)
 - Privacy
+  - Default collection privacy (public/private)
   - Data export
   - Clear cache
 - About
@@ -196,30 +278,91 @@ When user taps on a search result:
   - Privacy policy
   - Help & support
 
+### 3.6 Social Features (New)
+
+#### Following System
+- **Follow/Unfollow Users**:
+  - Button on user profiles
+  - Following count & followers count visible on profiles
+  - View list of who you're following
+  - View list of your followers
+  - Privacy: Users can make their follower/following lists private
+
+#### Collection Interactions
+- **Like Collections**:
+  - Heart icon on collection cards
+  - Like count visible
+  - View who liked a collection (if public)
+- **Save Others' Collections**:
+  - "Save to Library" button on public collections
+  - Saved collections appear in your profile under "Saved Collections" section
+  - Original creator credited
+  - Updates sync: If creator adds flowers, your saved copy updates too
+  - Can create your own copy to modify independently
+
+#### Discovery Feed
+- Users discover collections through:
+  - Following feed (collections from users you follow)
+  - Explore page (popular/trending collections)
+  - Search (search by collection name or username)
+
+#### Notifications
+- New follower notifications
+- Someone liked your collection
+- Someone saved your collection
+- Someone commented on a flower in your collection (optional)
+
 ---
 
 ## 4. Information Architecture
 
 ### 4.1 Navigation Structure
 
-**Tab Bar Navigation (Bottom)**:
-1. **Home** (Search icon)
-   - Search interface
-   - Featured flowers section
-   - Quick filter chips
+**Bottom Tab Bar Navigation (Apple Floating Glass Design)**:
+- **Visual Style**: Translucent frosted glass effect (iOS glassmorphism)
+- **Material**: UIBlurEffect with vibrancy
+- **Appearance**: Floating above content, rounded corners, subtle shadow
+- **Adaptive**: Adjusts opacity and blur based on content beneath
 
-2. **Catalog** (History icon)
-   - Search history
-   - Chronological list
+**Tabs** (4 total):
 
-3. **Saved** (Bookmark/Heart icon)
-   - Saved flowers
-   - Collections
+1. **Home** (House icon)
+   - **Content**: Curated feed of flower catalogues
+   - **Algorithm**: 
+     - Mix of flowers from users you follow (60%)
+     - Flowers from users with similar collections (30%)
+     - Random discover content (10%)
+   - **Display**: Polaroid-style cards with username, flower info
+   - **Interactions**: Like, save, view full details, visit user profile
+   - **Refresh**: Pull to refresh for new content
 
-4. **Profile** (User icon)
-   - User info
-   - Settings
-   - Stats
+2. **Catalog/Search** (Magnifying glass icon)
+   - **Primary**: Search bar at top (glassy design matching tab bar)
+   - **Below search**: Search history
+     - Chronological list (newest first)
+     - Group by date (Today, Yesterday, This Week, Earlier)
+     - Each entry: Thumbnail, flower name, timestamp
+     - Swipe to delete individual items
+     - "Clear All" option
+   - **When searching**: Results replace history view
+   - **Empty state**: Suggested searches or trending flowers
+
+3. **Saved** (Bookmark icon)
+   - **Top section**: Glassy tab switcher between:
+     - Saved Flowers (all saved items)
+     - Collections (organized groups)
+   - **Saved Flowers view**: 
+     - Polaroid grid of all saved flowers
+     - Sort/filter options
+   - **Collections view**:
+     - Grid of collection cards
+     - Each shows cover, name, count, privacy icon
+     - Tap to view collection contents
+
+4. **Profile** (Person icon)
+   - User profile view
+   - Settings access
+   - Personal stats and collections
 
 ### 4.2 Screen Hierarchy
 
@@ -306,10 +449,15 @@ When user taps on a search result:
 - **Hosting**: AWS, Google Cloud, or Firebase
 
 #### Third-Party Services
-- **Authentication**: Firebase Auth or Auth0 (biometric support)
+- **Authentication**: 
+  - Sign in with Apple (native)
+  - Firebase Auth or Auth0 for Google/Facebook OAuth
+  - Biometric authentication support (Face ID/Touch ID)
 - **Analytics**: Firebase Analytics or Mixpanel
 - **Crash Reporting**: Firebase Crashlytics or Sentry
 - **Push Notifications**: Firebase Cloud Messaging or APNs
+- **Image CDN**: Cloudinary or Imgix (for optimization and transformations)
+- **Moderation**: Content moderation API for comments (e.g., OpenAI Moderation API)
 
 ### 6.2 Data Models
 
@@ -317,12 +465,18 @@ When user taps on a search result:
 ```
 User {
   id: UUID
-  email: String (unique, indexed)
-  passwordHash: String
+  email: String (unique, indexed, hidden from other users)
+  username: String (unique, indexed, 3-20 chars, alphanumeric + underscore)
   displayName: String
   profilePhotoURL: String?
+  profileAbout: String? (max 80 chars)
+  oauthProvider: String (apple/google/facebook)
+  oauthId: String (unique per provider)
   createdAt: DateTime
   lastLoginAt: DateTime
+  cataloguePrivacy: Boolean (public/private, default: public)
+  followerCount: Integer (denormalized)
+  followingCount: Integer (denormalized)
   preferences: UserPreferences
 }
 
@@ -330,6 +484,8 @@ UserPreferences {
   defaultView: String (grid/list)
   measurementUnit: String (metric/imperial)
   notificationsEnabled: Boolean
+  emailNotifications: Boolean
+  defaultCollectionPrivacy: Boolean (public/private)
 }
 ```
 
@@ -349,6 +505,15 @@ Flower {
   spread: String
   careTips: String
   tags: [String]
+  scentProfile: ScentProfile (new)
+  likeCount: Integer (denormalized)
+  commentCount: Integer (denormalized)
+}
+
+ScentProfile {
+  fragranceTypes: [String] (floral, citrus, sweet, earthy, spicy, etc.)
+  intensity: String (none, subtle, moderate, strong)
+  userNotes: [String] (community-contributed descriptions)
 }
 
 GrowingConditions {
@@ -356,6 +521,24 @@ GrowingConditions {
   water: String (low, medium, high)
   soilType: String
   pH: String
+}
+```
+
+#### Comment Model (New)
+```
+Comment {
+  id: UUID
+  flowerId: UUID (foreign key)
+  userId: UUID (foreign key)
+  content: String (max 500 chars)
+  photoURL: String? (optional user photo attachment)
+  upvotes: Integer
+  downvotes: Integer (hidden from display)
+  score: Integer (upvotes - downvotes, for sorting)
+  parentCommentId: UUID? (for nested replies)
+  createdAt: DateTime
+  editedAt: DateTime?
+  isEdited: Boolean
 }
 ```
 
@@ -370,6 +553,7 @@ SavedFlower {
   personalNotes: String?
   userPhotos: [String]?
   tags: [String]?
+  isPublic: Boolean (default: inherits from collection or user catalogue privacy)
 }
 ```
 
@@ -391,25 +575,74 @@ Collection {
   userId: UUID (foreign key)
   name: String
   description: String?
+  coverImageURL: String? (first flower image)
   createdAt: DateTime
+  updatedAt: DateTime
+  isPublic: Boolean (default: user preference)
   flowerCount: Integer (computed)
+  likeCount: Integer (denormalized)
+  saveCount: Integer (denormalized, how many users saved this collection)
+}
+```
+
+#### Follow Model (New)
+```
+Follow {
+  id: UUID
+  followerId: UUID (foreign key to User)
+  followingId: UUID (foreign key to User)
+  createdAt: DateTime
+}
+```
+
+#### CollectionLike Model (New)
+```
+CollectionLike {
+  id: UUID
+  collectionId: UUID (foreign key)
+  userId: UUID (foreign key)
+  likedAt: DateTime
+}
+```
+
+#### SavedCollection Model (New)
+```
+SavedCollection {
+  id: UUID
+  originalCollectionId: UUID (foreign key to Collection)
+  userId: UUID (foreign key to User, who saved it)
+  savedAt: DateTime
+  syncWithOriginal: Boolean (default: true)
 }
 ```
 
 ### 6.3 API Endpoints
 
-#### Authentication
-- `POST /auth/signup` - Create new user account
-- `POST /auth/login` - User login
+#### Authentication (OAuth)
+- `POST /auth/oauth/apple` - Sign in with Apple
+- `POST /auth/oauth/google` - Sign in with Google
+- `POST /auth/oauth/facebook` - Sign in with Facebook
 - `POST /auth/logout` - User logout
 - `POST /auth/refresh` - Refresh JWT token
-- `POST /auth/forgot-password` - Request password reset
-- `POST /auth/reset-password` - Reset password with token
+- `POST /auth/username` - Set/update username (one-time after OAuth)
 
 #### Flowers
 - `GET /flowers/search?query={text}&filters={}` - Search flowers
 - `GET /flowers/:id` - Get flower details
-- `GET /flowers/featured` - Get featured flowers (home screen)
+- `GET /flowers/feed` - Get personalized home feed
+- `GET /flowers/trending` - Get trending flowers
+- `PUT /flowers/:id/scent` - Add user scent note (community contribution)
+
+#### Comments (New)
+- `POST /flowers/:flowerId/comments` - Add comment to flower
+- `GET /flowers/:flowerId/comments?filter={interactions|newest|oldest}` - Get comments
+- `PUT /comments/:id` - Edit own comment (within 5 min)
+- `DELETE /comments/:id` - Delete own comment
+- `POST /comments/:id/upvote` - Upvote comment
+- `POST /comments/:id/downvote` - Downvote comment (hidden)
+- `DELETE /comments/:id/upvote` - Remove upvote
+- `DELETE /comments/:id/downvote` - Remove downvote
+- `POST /comments/:id/report` - Report inappropriate comment
 
 #### Saved Flowers
 - `POST /saved` - Save a flower
@@ -421,8 +654,23 @@ Collection {
 #### Collections
 - `POST /collections` - Create new collection
 - `GET /collections` - Get all user collections
-- `PUT /collections/:id` - Update collection
+- `GET /collections/:id` - Get collection details
+- `PUT /collections/:id` - Update collection (name, description, privacy)
 - `DELETE /collections/:id` - Delete collection
+- `POST /collections/:id/like` - Like a collection
+- `DELETE /collections/:id/like` - Unlike a collection
+- `POST /collections/:id/save` - Save someone else's collection
+- `DELETE /collections/:id/save` - Unsave a collection
+- `GET /collections/:id/likes` - Get users who liked collection
+- `GET /collections/discover` - Discover public collections
+
+#### Social/Following (New)
+- `POST /users/:userId/follow` - Follow a user
+- `DELETE /users/:userId/follow` - Unfollow a user
+- `GET /users/:userId/followers` - Get user's followers
+- `GET /users/:userId/following` - Get who user follows
+- `GET /users/:userId/profile` - Get public profile
+- `GET /users/username/:username` - Find user by username
 
 #### Search History
 - `GET /history` - Get search history
@@ -430,11 +678,13 @@ Collection {
 - `DELETE /history/clear` - Clear all history
 
 #### User Profile
-- `GET /user/profile` - Get user profile
-- `PUT /user/profile` - Update profile
-- `PUT /user/password` - Change password
+- `GET /user/profile` - Get own profile
+- `PUT /user/profile` - Update profile (display name, about, photo)
+- `PUT /user/privacy` - Update privacy settings
 - `DELETE /user/account` - Delete account
 - `GET /user/stats` - Get user statistics
+- `GET /user/notifications` - Get notifications
+- `PUT /user/notifications/:id/read` - Mark notification as read
 
 ### 6.4 Performance Requirements
 - App launch time: < 2 seconds (cold start)
@@ -515,55 +765,102 @@ Calyx should feel organic, fresh, and botanical while maintaining modern iOS des
 - Full-screen botanical background (subtle, not overwhelming)
 - App logo centered
 - Tagline: "Discover. Save. Grow Your Flower Knowledge"
-- Two primary buttons: "Sign In" and "Create Account"
+- Three OAuth buttons (Apple, Google, Facebook)
+- Apple design language: Rounded, prominent buttons
 - Minimalist design
 
-#### Home (Search) Screen
-- Large search bar at top (rounded, with search icon)
-- Below search: Quick filter chips (By Color, By Season, By Type)
-- "Featured Flowers" section with horizontal scrolling cards
-- Each card: Beautiful flower image, name overlay
-- Bottom: Tab bar navigation
+#### Home (Feed) Screen
+- **Apple Floating Glass Tab Bar** at bottom
+- **Content**: Curated feed of flower discoveries
+- **Each card** (Polaroid style):
+  - Username at top with small profile photo
+  - Large flower photo in Polaroid frame
+  - Flower name in "handwritten" font on Polaroid bottom
+  - Like button, save button, comment count
+  - Timestamp
+- **Interactions**: Pull to refresh (smooth animation)
+- **Scroll**: Infinite scroll, smooth performance
+
+#### Catalog/Search Screen
+- **Glassy search bar** at top (matching tab bar aesthetic)
+  - Frosted glass effect
+  - Search icon left, voice search right
+  - Rounded corners, subtle shadow
+- **Below search**: Search history
+  - Grouped by date (collapsible sections)
+  - Each item: Small Polaroid thumbnail, name, time
+  - Swipe left to delete (iOS standard)
+- **Search results** (when active):
+  - 2-column Polaroid grid
+  - Smooth infinite scroll with image optimization
 
 #### Search Results Screen
-- Search query displayed at top with edit capability
-- View toggle (grid/list) in top right
-- Filter button in top right
-- Results in 2-column grid:
-  - Square image (aspect ratio 1:1)
-  - Common name below image
-  - Small heart icon in corner for quick save
+- Search query displayed in glassy header
+- View toggle (grid/list) in top right corner
+- Filter button with bottom sheet options
+- Results in **Polaroid grid**:
+  - White border around each image
+  - Thicker bottom border (Polaroid style)
+  - Flower name in handwritten font
+  - Scientific name in smaller italic
+  - Heart icon for quick save (top right corner)
 - Pull to refresh
 
 #### Flower Detail Screen
-- Hero image at top (full width, 60% screen height)
-- Back button (top left)
-- Share button (top right)
-- Scroll for information:
-  - Common name (large, bold)
-  - Scientific name (italic, below)
-  - Tabbed sections: Overview, Care, Details
-  - Information presented in clean, readable format
-- Sticky footer: "Save to Collection" button (prominent)
+- **Hero image**: Large Polaroid-framed photo at top
+- Back button (top left, glassy circle)
+- Share button (top right, glassy circle)
+- **Tabs below hero** (glassy tab bar):
+  - Overview | Care | Details | Community
+- **Content scrolls** within selected tab
+- **Sticky footer** (glassy):
+  - "Save to Collection" button (primary)
+  - Like button with count
+  - Share button
 
 #### Saved Flowers Screen
-- Header: "My Saved Flowers" with count
-- Sort/filter options (top right)
-- Grid view of saved flowers (2 columns)
-- Each card: Image, name, date saved
-- Tap to view details
-- Long press for quick actions (remove, move to collection)
+- **Header**: "Saved" title
+- **Glassy tab switcher** (top, below header):
+  - "Flowers" tab | "Collections" tab
+  - Smooth sliding animation
+- **Flowers view**: 
+  - Polaroid grid (2 columns)
+  - Each card shows flower with name
+  - Filter/sort in top right (glassy button)
+- **Collections view**:
+  - Larger cards showing collection cover
+  - Name, count, privacy icon overlay
+  - Like count if collection is liked
 
-#### Catalog (History) Screen
-- Header: "Search History"
-- Grouped by date sections (Today, Yesterday, etc.)
-- List view:
-  - Small thumbnail (left)
-  - Flower name
-  - Search timestamp
-  - Chevron (right) to view details
-- Swipe left to delete
-- "Clear All" button at bottom
+#### Profile Screen (Minimalist & Clean)
+- **Profile Header**:
+  - **Left**: Circular profile photo (80pt)
+  - **Center**: Catalogue count
+    - Large number (32pt, bold)
+    - "Flowers" label below (12pt)
+  - **Right**: Text stack
+    - Display name (18pt, bold)
+    - @username (14pt, gray)
+    - Profile about (14pt, regular, one line)
+- **Follower/Following counts** (below header, centered):
+  - Two numbers side by side
+  - "X Followers  •  Y Following"
+  - Tappable to view lists
+- **Divider line** (subtle, 1pt gray)
+- **Glassy tab bar** (Collections | Catalogue | Favorites):
+  - Smooth transitions
+  - Content loads below tabs
+- **Collections tab**: Grid of collection cards
+- **Catalogue tab**: All unique flowers (Polaroid grid)
+- **Favorites tab**: Favorited items (Polaroid grid)
+- **Settings icon** (top right corner, gear icon)
+
+#### Other User Profile Screen
+- Similar layout to own profile
+- **Follow/Unfollow button** below header (prominent)
+- Shows only public content
+- Catalogue only visible if user has it set to public
+- Message button (future feature placeholder)
 
 ### 7.7 Animations & Interactions
 - **Transitions**: Smooth, natural (0.3s duration)
@@ -575,30 +872,70 @@ Calyx should feel organic, fresh, and botanical while maintaining modern iOS des
 
 ### 7.8 Component Library
 
+**Apple Glassmorphism Elements**:
+- **Tab Bar**:
+  - Background: UIBlurEffect (systemMaterial)
+  - Vibrancy: High
+  - Corner radius: 24pt
+  - Padding: 12pt vertical
+  - Position: Floating 16pt from bottom, 16pt from sides
+  - Shadow: 0pt 8pt 24pt rgba(0,0,0,0.15)
+- **Search Bar (Glassy)**:
+  - Background: UIBlurEffect (systemThinMaterial)
+  - Border: 1pt white with 20% opacity
+  - Corner radius: 22pt (fully rounded)
+  - Height: 44pt
+  - Shadow: 0pt 2pt 8pt rgba(0,0,0,0.1)
+- **Floating Buttons**:
+  - Background: UIBlurEffect (systemUltraThinMaterial)
+  - Size: 44x44pt (circular)
+  - Icon: White or primary color
+  - Shadow: 0pt 4pt 12pt rgba(0,0,0,0.15)
+
+**Polaroid Cards**:
+- **Frame Design**:
+  - White background
+  - Border: 12pt padding all sides
+  - Bottom border: 32pt (for text space)
+  - Drop shadow: 0pt 4pt 12pt rgba(0,0,0,0.12)
+  - Slight rotation: Random -2° to +2° for organic feel
+- **Image**: 
+  - Aspect ratio: 1:1 (square)
+  - Fit: Cover (no distortion)
+- **Text area** (bottom 32pt):
+  - Flower name: "Recoleta" or handwritten-style font, 16pt
+  - Scientific name: SF Pro Italic, 12pt, gray
+- **Interaction**:
+  - Tap: Slight scale (0.98) + navigation
+  - Long press: Quick action menu
+
 **Buttons**:
 - Primary: Filled, botanical green background, white text
 - Secondary: Outlined, botanical green border, green text
 - Tertiary: Text only, botanical green text
+- Glassy: Frosted background (systemThinMaterial), white text
 - Height: 48pt (adequate touch target)
 
 **Input Fields**:
 - Border: 1pt medium gray
-- Focus state: 2pt botanical green border
+- Focus state: 2pt botanical green border with glow
 - Placeholder: Medium gray text
 - Error state: Red border with error message below
+- Glassy variant: Frosted background with subtle border
 
-**Cards**:
+**Cards** (Standard, non-Polaroid):
 - Background: White or light gray
-- Border: 1pt light gray or none (use shadow)
-- Shadow: Subtle (0pt 2pt 8pt rgba(0,0,0,0.1))
+- Border: None (use shadow only)
+- Shadow: 0pt 2pt 12pt rgba(0,0,0,0.08)
+- Corner radius: 12pt
 - Padding: 16pt
 
-**Search Bar**:
-- Background: Light gray
-- Height: 44pt
-- Rounded corners: 22pt (fully rounded)
-- Search icon: Left side
-- Clear button: Right side (when text entered)
+**Tab Bars** (Content sections):
+- Style: Segmented control or pills
+- Active: Botanical green background, white text
+- Inactive: Transparent, gray text
+- Glassy variant: Frosted background
+- Animation: Smooth sliding indicator (0.3s ease)
 
 ---
 
@@ -638,16 +975,40 @@ Calyx should feel organic, fresh, and botanical while maintaining modern iOS des
 ## 10. Future Enhancements (Phase 2+)
 
 ### 10.1 Potential Features
-- **Image Recognition**: Take a photo to identify flowers
-- **Social Features**: Share collections with friends, follow other users
-- **Garden Planner**: Visual garden layout tool
-- **Reminders**: Care reminders for saved flowers
-- **Offline Mode**: Full offline flower database
-- **AR Preview**: See how flowers look in your space
-- **Community**: User-submitted photos and reviews
-- **Bloom Tracking**: Track when saved flowers bloom
-- **Shopping Integration**: Links to purchase seeds/plants
-- **Widget**: iOS home screen widget with flower of the day
+- **Image Recognition**: Take a photo to identify flowers (AI-powered)
+- **Advanced Social**: 
+  - Direct messaging between users
+  - Share flowers/collections to social media
+  - Collaborative collections
+  - User badges and achievements
+- **Garden Planner**: Visual garden layout tool with spacing recommendations
+- **Care Reminders**: Push notifications for watering, fertilizing based on saved flowers
+- **Offline Mode**: Download flower database for offline browsing
+- **AR Preview**: See how flowers look in your space using AR
+- **Location Features**:
+  - Nearby gardens/nurseries
+  - Geo-tagged flower discoveries
+  - Regional flower recommendations
+- **Bloom Tracking**: Calendar to track when saved flowers bloom in your garden
+- **Shopping Integration**: 
+  - Links to purchase seeds/plants
+  - Price comparison
+  - Nursery reviews
+- **Widget**: iOS home screen widget showing:
+  - Flower of the day
+  - Recently saved flowers
+  - Quick search access
+- **Apple Watch App**: 
+  - Quick flower identification
+  - Care reminders on wrist
+- **Advanced Analytics**:
+  - Garden statistics
+  - Seasonal insights
+  - Collection trends
+- **Educational Content**:
+  - Flower care courses
+  - Seasonal guides
+  - Expert tips from botanists
 
 ---
 
@@ -657,19 +1018,38 @@ Calyx should feel organic, fresh, and botanical while maintaining modern iOS des
 - **User Acquisition**: 
   - New sign-ups per month
   - App Store conversion rate
+  - OAuth provider breakdown (which is most popular)
 - **Engagement**:
   - Daily active users (DAU)
   - Monthly active users (MAU)
   - Average session duration
   - Searches per user per session
+  - Feed scroll depth
+  - Time spent on flower details
+- **Social Engagement** (New):
+  - Follow rate (% of users who follow others)
+  - Average follows per user
+  - Collection likes per day
+  - Collections saved per day
+  - Comments per flower per day
+  - User-to-user interactions
+- **Content**:
+  - Flowers saved per user
+  - Collections created per user
+  - Public vs private collection ratio
+  - User-generated scent notes
+  - Comment quality (upvote ratio)
 - **Retention**:
   - Day 1, 7, 30 retention rates
   - Churn rate
+  - Return visit frequency
 - **Feature Usage**:
   - % of users with saved flowers
   - Average number of saved flowers per user
   - Collection creation rate
   - Search history usage
+  - Feed engagement rate
+  - Profile view rate
 
 ### 11.2 User Satisfaction
 - App Store rating goal: 4.5+ stars
@@ -682,14 +1062,23 @@ Calyx should feel organic, fresh, and botanical while maintaining modern iOS des
 
 ### 12.1 MVP (Minimum Viable Product) - Phase 1
 **Must-Have Features for Launch**:
-- User authentication (sign up, sign in)
-- Flower search functionality
-- Search history (catalog)
-- Save flowers
-- Basic flower detail view
-- User profile with settings
+- OAuth authentication (Apple, Google, Facebook sign-in)
+- Username creation and profile setup
+- Home feed with personalized flower content
+- Flower search functionality (with Polaroid grid display)
+- Search history (catalog tab)
+- Save flowers with privacy controls
+- Collections with public/private settings
+- User profiles with catalogue count
+- Follow/unfollow users
+- Like and save others' collections
+- Flower detail view with tabs (Overview, Care, Details, Community)
+- Comments on flowers with upvote/downvote
+- Scent descriptions and community notes
+- Apple glassmorphism UI throughout
+- Basic notifications (followers, likes, comments)
 
-**Timeline**: 3-4 months development
+**Timeline**: 4-5 months development
 
 ### 12.2 Beta Testing
 - Internal testing: 2 weeks
