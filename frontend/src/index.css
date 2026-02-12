@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Calyx Design System - Botanical Nature-Inspired Theme */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+
+@layer base {
+  :root {
+    /* Cream background - warm, natural feel */
+    --background: 40 33% 94%;
+    --foreground: 90 55% 15%;
+
+    /* Card with white for Polaroid effect */
+    --card: 0 0% 100%;
+    --card-foreground: 90 55% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 90 55% 15%;
+
+    /* Botanical Green - Primary */
+    --primary: 90 55% 20%;
+    --primary-foreground: 40 33% 96%;
+
+    /* Soft cream - Secondary */
+    --secondary: 40 20% 90%;
+    --secondary-foreground: 90 55% 20%;
+
+    /* Muted cream tones */
+    --muted: 40 15% 88%;
+    --muted-foreground: 90 20% 40%;
+
+    /* Pink accent */
+    --accent: 352 40% 80%;
+    --accent-foreground: 90 55% 15%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 20% 85%;
+    --input: 40 20% 88%;
+    --ring: 90 55% 20%;
+
+    --radius: 0.75rem;
+
+    /* Custom botanical colors */
+    --botanical: 90 55% 20%;
+    --botanical-light: 90 40% 35%;
+    --botanical-dark: 90 60% 12%;
+    --cream: 40 33% 94%;
+    --cream-dark: 40 25% 88%;
+    --pink: 352 40% 80%;
+    --pink-light: 352 50% 90%;
+    --pink-dark: 352 35% 70%;
+
+    /* Shadows */
+    --shadow-soft: 0 4px 20px -4px hsl(90 20% 20% / 0.08);
+    --shadow-card: 0 8px 32px -8px hsl(90 20% 20% / 0.12);
+    --shadow-elevated: 0 16px 48px -12px hsl(90 20% 20% / 0.18);
+
+    /* Sidebar */
+    --sidebar-background: 40 33% 96%;
+    --sidebar-foreground: 90 55% 20%;
+    --sidebar-primary: 90 55% 20%;
+    --sidebar-primary-foreground: 40 33% 96%;
+    --sidebar-accent: 40 20% 90%;
+    --sidebar-accent-foreground: 90 55% 20%;
+    --sidebar-border: 40 20% 85%;
+    --sidebar-ring: 90 55% 20%;
+  }
+
+  .dark {
+    --background: 90 30% 8%;
+    --foreground: 40 33% 94%;
+
+    --card: 90 25% 12%;
+    --card-foreground: 40 33% 94%;
+
+    --popover: 90 25% 12%;
+    --popover-foreground: 40 33% 94%;
+
+    --primary: 90 45% 45%;
+    --primary-foreground: 90 30% 8%;
+
+    --secondary: 90 20% 18%;
+    --secondary-foreground: 40 33% 94%;
+
+    --muted: 90 15% 20%;
+    --muted-foreground: 40 20% 65%;
+
+    --accent: 352 35% 65%;
+    --accent-foreground: 40 33% 94%;
+
+    --destructive: 0 62% 35%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 90 15% 20%;
+    --input: 90 15% 22%;
+    --ring: 90 45% 45%;
+
+    --botanical: 90 45% 45%;
+    --botanical-light: 90 40% 55%;
+    --botanical-dark: 90 50% 35%;
+    --cream: 40 20% 85%;
+    --cream-dark: 40 15% 75%;
+    --pink: 352 35% 65%;
+    --pink-light: 352 40% 75%;
+    --pink-dark: 352 30% 55%;
+
+    --sidebar-background: 90 25% 10%;
+    --sidebar-foreground: 40 33% 94%;
+    --sidebar-primary: 90 45% 45%;
+    --sidebar-primary-foreground: 90 30% 8%;
+    --sidebar-accent: 90 20% 18%;
+    --sidebar-accent-foreground: 40 33% 94%;
+    --sidebar-border: 90 15% 20%;
+    --sidebar-ring: 90 45% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+@layer components {
+  /* Polaroid card style */
+  .polaroid-card {
+    @apply bg-card rounded-sm p-3 pb-5 shadow-card transition-all duration-300 hover:shadow-elevated hover:-translate-y-1;
+  }
+
+  /* Botanical button styles */
+  .btn-botanical {
+    @apply bg-primary text-primary-foreground px-6 py-3 rounded-full font-medium transition-all duration-300 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98];
+  }
+
+  .btn-botanical-outline {
+    @apply border-2 border-primary text-primary px-6 py-3 rounded-full font-medium transition-all duration-300 hover:bg-primary hover:text-primary-foreground;
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    @apply border-2 border-dashed border-muted-foreground/30 rounded-2xl p-12 transition-all duration-300 hover:border-primary/50 hover:bg-muted/50;
+  }
+
+  .upload-zone-active {
+    @apply border-primary bg-primary/5 scale-[1.02];
+  }
+
+  /* Confidence badge styles */
+  .confidence-high {
+    @apply bg-primary/10 text-primary border border-primary/20;
+  }
+
+  .confidence-medium {
+    @apply bg-amber-500/10 text-amber-700 border border-amber-500/20;
+  }
+
+  .confidence-low {
+    @apply bg-pink/20 text-pink-dark border border-pink-dark/20;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/80 backdrop-blur-md border border-white/20;
+  }
+
+  /* Botanical gradient text */
+  .text-botanical-gradient {
+    @apply bg-gradient-to-r from-botanical to-botanical-light bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.6s ease-out forwards;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.6s ease-out forwards;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { 
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to { 
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

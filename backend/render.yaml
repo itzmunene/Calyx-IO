@@ -1,9 +1,12 @@
 services:
   - type: web
-    name: calyxoi
-    env: python
+    name: calyx-api
+    runtime: python
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: SUPABASE_URL
         sync: false
@@ -12,6 +15,4 @@ services:
       - key: HF_TOKEN
         sync: false
       - key: PYTHON_VERSION
-        value: 3.11.0
-    healthCheckPath: /health
-    autoDeploy: true
+        value: 3.11.9
