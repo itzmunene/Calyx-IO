@@ -6,12 +6,10 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
-
 class SortBy(str, Enum):
     name = "name" # type: ignore
     popularity = "popularity"
     recent = "recent"
-
 
 class FilterParams(BaseModel):
     name: str | None = None
@@ -45,7 +43,7 @@ class IdentificationResponse(BaseModel):
     scientific_name: str
     common_names: List[str]
     confidence: float
-    primary_image_url: str
+    primary_image_url: str | None = None
     method: str
     traits_extracted: Dict
     alternatives: List[Dict] = []

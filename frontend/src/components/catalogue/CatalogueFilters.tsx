@@ -1,10 +1,11 @@
 import { Search, X, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import type { FilterOption } from "@/lib/api";
 
 const SORT_OPTIONS = [
-  { value: "alphabetical", label: "Alphabetical" },
-  { value: "popular", label: "Most Popular" },
+  { value: "name", label: "Alphabetical" },
+  { value: "popularity", label: "Most Popular" },
   { value: "recent", label: "Recently Added" },
 ];
 
@@ -27,7 +28,7 @@ interface CatalogueFiltersProps {
   onColorToggle: (color: string) => void;
   selectedCountry: string;
   onCountryChange: (country: string) => void;
-  countries: string[];
+  countries: FilterOption[];
   activeFilterCount: number;
   onClearAll: () => void;
 }
@@ -142,9 +143,9 @@ export function CatalogueFilters({
           className="w-full px-3 py-2.5 rounded-lg bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-sm appearance-none cursor-pointer"
         >
           <option value="">All Countries</option>
-          {countries.map((country) => (
-            <option key={country} value={country}>
-              {country}
+          {countries.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
             </option>
           ))}
         </select>
