@@ -24,12 +24,15 @@ from backend.models import (
     SpeciesDetail,
 )
 
-# Optional but highly recommended: load .env locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
+from pathlib import Path
+from dotenv import load_dotenv
+
+# load .env from project root OR backend folder reliably
+ROOT = Path(__file__).resolve().parents[1]   # .../Calyx IO
+BACKEND_DIR = Path(__file__).resolve().parent  # .../Calyx IO/backend
+
+load_dotenv(ROOT / ".env")
+load_dotenv(BACKEND_DIR / ".env")
 
 
 app = FastAPI(
@@ -42,13 +45,8 @@ app = FastAPI(
 cors_env = os.getenv("CORS_ORIGINS", "")
 origins = [o.strip() for o in cors_env.split(",") if o.strip()]
 
-if not origins:
-    origins = [
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+print("✅ CORS_ORIGINS raw:", cors_env)
+print("✅ CORS allow_origins:", origins)
 
 app.add_middleware(
     CORSMiddleware,

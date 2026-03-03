@@ -45,16 +45,18 @@ export interface CatalogueItem {
   scientific_name: string;
   common_names: string[];
   primary_image_url: string | null;
+
+  traits?: { color_primary?: string[] };
   colors?: string[];
   search_count?: number;
-  countries: FilterOption[];
+  country?: string;
 }
 
 export interface CatalogueResponse {
   items: CatalogueItem[];
   total: number;
   page: number;
-  total_pages: number;
+  total_pages?: number;
   pages?: number;
 }
 

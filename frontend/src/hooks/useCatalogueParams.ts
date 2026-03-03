@@ -1,12 +1,19 @@
 import { useSearchParams } from "react-router-dom";
 import { useCallback, useMemo } from "react";
+import type { SortBy } from "@/lib/api";
+
+const SORT_VALUES: SortBy[] = ["name", "popularity", "recent"];
+
+function isSortBy(v: string): v is SortBy {
+  return (SORT_VALUES as string[]).includes(v);
+}
 
 export function useCatalogueParams() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const params = useMemo(() => {
     const rawSort = searchParams.get("sort_by") || "name";
-    const sortBy = rawSort === "alphabetical" ? "name" : rawSort; // backwards compat
+    const sortBy: SortBy = isSortBy(rawSort) ? rawSort : "name";
 
     return {
       name: searchParams.get("name") || "",
@@ -26,16 +33,14 @@ export function useCatalogueParams() {
         if (!strValue || strValue === "0") next.delete(key);
         else next.set(key, strValue);
 
-        if (key !== "page") next.delete("page"); // reset pagination when filters change
+        if (key !== "page") next.delete("page");
         return next;
       });
     },
     [setSearchParams]
   );
 
-  const clearAll = useCallback(() => {
-    setSearchParams({});
-  }, [setSearchParams]);
+  const clearAll = useCallback(() => setSearchParams({}), [setSearchParams]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;

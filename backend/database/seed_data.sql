@@ -1,6 +1,8 @@
 -- Calyx.io Seed Data - 100 Common Flowers
 -- Run this after schema.sql
 
+-- Calyx IO/backend/database/seed_data.sql
+
 -- Insert 100 popular flower species
 -- Note: Embeddings will need to be generated separately using the vision model
 

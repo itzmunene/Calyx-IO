@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Flower2, SlidersHorizontal, X } from "lucide-react";
+
 import { Navbar } from "@/components/Navbar";
 import { CatalogueCard, CatalogueCardSkeleton } from "@/components/catalogue/CatalogueCard";
 import { CatalogueFilters } from "@/components/catalogue/CatalogueFilters";
 import { CatalogueEmptyState } from "@/components/catalogue/CatalogueEmptyState";
 import { CataloguePagination } from "@/components/catalogue/CataloguePagination";
+
 import { useCatalogueParams } from "@/hooks/useCatalogueParams";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getCatalogue, getCatalogueFilters } from "@/lib/api";
@@ -14,24 +16,31 @@ import { Badge } from "@/components/ui/badge";
 
 export default function Catalogue() {
   const { params, setParam, clearAll, activeFilterCount } = useCatalogueParams();
+
   const [localSearch, setLocalSearch] = useState(params.name);
   const debouncedSearch = useDebounce(localSearch, 300);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  // Sync debounced search to URL params
-  const searchToUse = debouncedSearch !== params.name ? debouncedSearch : params.name;
-  if (debouncedSearch !== params.name) {
-    setParam("name", debouncedSearch);
-  }
+  // Keep local input in sync if URL changes (back/forward, shared link)
+  useEffect(() => {
+    setLocalSearch(params.name);
+  }, [params.name]);
 
-  // Fetch filters
+  // Push debounced input into URL
+  useEffect(() => {
+    if (debouncedSearch !== params.name) {
+      setParam("name", debouncedSearch);
+    }
+  }, [debouncedSearch, params.name, setParam]);
+
+  const searchToUse = params.name;
+
   const { data: filterOptions } = useQuery({
     queryKey: ["catalogue-filters"],
     queryFn: getCatalogueFilters,
     staleTime: 5 * 60 * 1000,
   });
 
-  // Fetch catalogue
   const { data, isLoading, isError } = useQuery({
     queryKey: [
       "catalogue",
@@ -80,9 +89,11 @@ export default function Catalogue() {
               <Flower2 className="w-4 h-4" />
               Explore Our Collection
             </div>
+
             <h1 className="text-4xl md:text-5xl font-serif font-bold text-foreground mb-3">
               Flower Catalogue
             </h1>
+
             {data && (
               <p className="text-muted-foreground">
                 {data.total.toLocaleString()} {data.total === 1 ? "species" : "species"} found
@@ -116,12 +127,7 @@ export default function Catalogue() {
 
           <div className="flex gap-8">
             {/* Sidebar - Desktop */}
-            <aside
-              className={cn(
-                "w-72 shrink-0",
-                "hidden lg:block"
-              )}
-            >
+            <aside className={cn("w-72 shrink-0 hidden lg:block")}>
               <div className="sticky top-24 bg-card rounded-2xl border border-border p-6 shadow-soft">
                 <CatalogueFilters
                   searchValue={localSearch}
@@ -193,10 +199,11 @@ export default function Catalogue() {
                       <CatalogueCard key={item.id} item={item} />
                     ))}
                   </div>
+
                   <CataloguePagination
-                    currentPage={data.page}
-                    totalPages={data.total_pages}
-                    onPageChange={(p) => setParam("page", p)}
+                      currentPage={data.page}
+                      totalPages={data.total_pages ?? data.pages ?? 1}
+                      onPageChange={(p) => setParam("page", p)}
                   />
                 </>
               ) : (

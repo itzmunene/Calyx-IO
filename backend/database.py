@@ -18,6 +18,7 @@ class SupabaseClient:
 
         self.client: Client = create_client(url, key)
         self._connected = True
+        
 
     def is_connected(self) -> bool:
         return self._connected
