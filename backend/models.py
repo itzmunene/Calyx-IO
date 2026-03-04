@@ -39,40 +39,49 @@ class GrowingInfo(BaseModel):
 
 
 class IdentificationResponse(BaseModel):
+    """Response model for flower identification"""
     species_id: str
     scientific_name: str
     common_names: List[str]
     confidence: float
-    primary_image_url: str | None = None
+    primary_image_url: str
     method: str
-    traits_extracted: Dict
-    alternatives: List[Dict] = []
+    traits_extracted: dict
+    alternatives: List[dict] = []
     response_time_ms: int
-    growing_info: GrowingInfo | None = None
+    # NEW: Add growing info to identification results
+    growing_info: Optional[GrowingInfo] = None
 
 
 class SearchResponse(BaseModel):
+    """Response model for text search"""
     id: str
     scientific_name: str
     common_names: List[str]
-    primary_image_url: str | None = None
-    family: str | None = None
+    primary_image_url: Optional[str]
+    family: Optional[str]
+    # Optional: Add growing_info for search results
+    growing_info: Optional[GrowingInfo] = None
 
 
 class SpeciesDetail(BaseModel):
+    """Detailed species information"""
     id: str
     scientific_name: str
     common_names: List[str]
-    family: str | None = None
-    description: str | None = None
-    care_tips: str | None = None
-    bloom_season: list[str] | None = None
-    traits: Dict
-    primary_image_url: str | None = None
-    thumbnail_url: str | None = None
-    growing_info: GrowingInfo | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    family: Optional[str]
+    description: Optional[str]
+    care_tips: Optional[str]
+    bloom_season: Optional[List[str]]
+    traits: dict
+    primary_image_url: Optional[str]
+    thumbnail_url: Optional[str]
+    
+    # NEW: Growing information
+    growing_info: Optional[GrowingInfo] = None
+    
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
 
 class FeedbackRequest(BaseModel):

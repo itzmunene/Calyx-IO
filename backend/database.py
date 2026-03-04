@@ -1,6 +1,7 @@
 # backend/database.py
 import os
 from typing import Any, Dict, List, Optional, cast
+from unittest import result
 
 import numpy as np
 from supabase import Client, create_client
