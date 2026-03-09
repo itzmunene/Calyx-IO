@@ -7,15 +7,15 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 class SortBy(str, Enum):
-    name = "name" # type: ignore
+    alphabetical = "name"      
     popularity = "popularity"
     recent = "recent"
 
 class FilterParams(BaseModel):
-    name: str | None = None
-    color: list[str] | None = None
-    country: str | None = None
-    sort_by: SortBy = SortBy.name # type: ignore
+    name: Optional[str] = None
+    color: Optional[List[str]] = None
+    country: Optional[str] = None
+    sort_by: SortBy = SortBy.alphabetical
     page: int = 1
     limit: int = 20
 
@@ -44,7 +44,7 @@ class IdentificationResponse(BaseModel):
     scientific_name: str
     common_names: List[str]
     confidence: float
-    primary_image_url: str
+    primary_image_url: Optional[str] = None
     method: str
     traits_extracted: dict
     alternatives: List[dict] = []

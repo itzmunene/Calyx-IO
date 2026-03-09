@@ -3,50 +3,71 @@ import os
 import time
 import io
 import hashlib
-from backend.models import SortBy
-from backend.models import FilterParams
-
+from pathlib import Path
 from typing import Optional, List
-from enum import Enum
-from typing import List, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
-from pydantic import BaseModel
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from backend.database import SupabaseClient
 from backend.vision import VisionModel
-from backend.models import (
-    IdentificationResponse,
-    SearchResponse,
-    SpeciesDetail,
-)
+from backend.auth import require_user
+from backend.models import SortBy, IdentificationResponse, SearchResponse, SpeciesDetail
 
-from pathlib import Path
-from dotenv import load_dotenv
 
-# load .env from project root OR backend folder reliably
-ROOT = Path(__file__).resolve().parents[1]   # .../Calyx IO
-BACKEND_DIR = Path(__file__).resolve().parent  # .../Calyx IO/backend
-
+# -----------------------------
+# Env loading (root + backend)
+# -----------------------------
+ROOT = Path(__file__).resolve().parents[1]         # .../Calyx IO
+BACKEND_DIR = Path(__file__).resolve().parent      # .../Calyx IO/backend
 load_dotenv(ROOT / ".env")
 load_dotenv(BACKEND_DIR / ".env")
 
 
+# -----------------------------
+# Rate limiting (user id -> IP)
+# -----------------------------
+def rate_limit_key(request: Request) -> str:
+    user_id = getattr(request.state, "user_id", None)
+    return user_id or get_remote_address(request)
+
+limiter = Limiter(key_func=rate_limit_key)
+
+
+# -----------------------------
+# App
+# -----------------------------
 app = FastAPI(
     title="Calyx.io API",
     version="0.1.0",
     description="Zero-budget flower identification API",
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler) # type: ignore[arg-type]
+
+
+# -----------------------------
 # CORS
+# -----------------------------
 cors_env = os.getenv("CORS_ORIGINS", "")
 origins = [o.strip() for o in cors_env.split(",") if o.strip()]
 
-print("✅ CORS_ORIGINS raw:", cors_env)
-print("✅ CORS allow_origins:", origins)
+# Optional fallback for local dev (keep if you want)
+if not origins:
+    origins = [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,7 +77,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialise services
+
+# -----------------------------
+# Services
+# -----------------------------
 db = SupabaseClient()
 vision = VisionModel()
 
@@ -67,6 +91,9 @@ async def startup_event():
     print("✅ Vision model loaded")
 
 
+# -----------------------------
+# System endpoints
+# -----------------------------
 @app.get("/")
 async def root():
     return {
@@ -89,22 +116,44 @@ async def health_check():
 
 @app.get("/supabase/ping")
 async def supabase_ping():
-    # quick “is env + client OK?” check
     count = await db.get_species_count()
     return {"ok": True, "connected": db.is_connected(), "species_count": count}
 
 
+# -----------------------------
+# Core API
+# -----------------------------
 @app.post("/api/v1/identify", response_model=IdentificationResponse)
-async def identify_flower(image: UploadFile = File(...), use_cache: bool = True):
+@limiter.limit("5/minute")
+async def identify_flower(
+    request: Request,
+    image: UploadFile = File(...),
+    use_cache: bool = True,
+    user=Depends(require_user),  # ✅ requires Supabase JWT
+):
     start_time = time.time()
 
+    # Validate content type
+    allowed_types = {"image/jpeg", "image/png", "image/webp"}
+    if image.content_type not in allowed_types:
+        raise HTTPException(status_code=415, detail="Unsupported image type (jpeg/png/webp only)")
+
+    # Read once
+    image_bytes = await image.read()
+
+    # Validate size (5MB)
+    max_bytes = 5 * 1024 * 1024
+    if len(image_bytes) > max_bytes:
+        raise HTTPException(status_code=413, detail="File too large (max 5MB)")
+
+    # Decode
     try:
-        image_bytes = await image.read()
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         image_hash = hashlib.sha256(image_bytes).hexdigest()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
+    # Cache
     if use_cache:
         cached = await db.get_cached_identification(image_hash)
         if cached:
@@ -115,6 +164,7 @@ async def identify_flower(image: UploadFile = File(...), use_cache: bool = True)
                 method="cache_hit",
             )
 
+    # Vision + matching
     try:
         traits = await vision.extract_traits(img)
         embedding = await vision.get_embedding(img)
@@ -152,7 +202,7 @@ async def identify_flower(image: UploadFile = File(...), use_cache: bool = True)
         scientific_name=top_match["scientific_name"],
         common_names=top_match["common_names"],
         confidence=top_match["confidence"],
-        primary_image_url=top_match.get("primary_image_url"), # type: ignore
+        primary_image_url=top_match.get("primary_image_url"),
         method=method,
         traits_extracted=traits,
         alternatives=candidates[1:4],
@@ -198,105 +248,58 @@ async def get_stats():
     return await db.get_stats()
 
 
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal server error",
-            "detail": str(exc),
-        },
-    )
-
 @app.get("/api/v1/catalogue")
 async def get_catalogue(
     name: Optional[str] = None,
-    color: Optional[str] = None,  # Can be comma-separated: "red,pink,yellow"
+    color: Optional[str] = None,  # comma-separated: "red,pink"
     country: Optional[str] = None,
-    sort_by: SortBy = SortBy.name, # type: ignore
+    sort_by: SortBy = SortBy.alphabetical,
     page: int = 1,
-    limit: int = 20
+    limit: int = 20,
 ):
-    """
-    Get paginated flower catalogue with filtering and sorting
-    
-    Query Parameters:
-    - name: Filter by flower name (partial match)
-    - color: Filter by color(s) - comma-separated (e.g., "red,pink")
-    - country: Filter by country/region (e.g., "Kenya", "US", "UK")
-    - sort_by: Sort order - "name", "popularity", "recent"
-    - page: Page number (default: 1)
-    - limit: Items per page (default: 20, max: 100)
-    
-    Returns:
-    - items: List of flower species
-    - total: Total count
-    - page: Current page
-    - pages: Total pages
-    - has_next: Boolean
-    - has_prev: Boolean
-    """
-    
-    # Validate limit
     if limit > 100:
         limit = 100
-    
-    # Parse colors if provided
-    colors = color.split(',') if color else None
-    
-    # Get catalogue data
-    result = await db.get_catalogue(
+
+    colors = color.split(",") if color else None
+
+    return await db.get_catalogue(
         name_filter=name,
         color_filter=colors,
         country_filter=country,
         sort_by=sort_by.value,
         page=page,
-        limit=limit
+        limit=limit,
     )
-    
-    return result
 
 
 @app.get("/api/v1/catalogue/filters")
 async def get_available_filters():
-    """
-    Get available filter options for the catalogue
-    
-    Returns all unique values for:
-    - colors (from species traits)
-    - countries (from species native regions)
-    """
-    
     filters = await db.get_available_filters()
-    
     return {
         "colors": filters.get("colors", []),
         "countries": filters.get("countries", []),
         "sort_options": [
             {"value": "name", "label": "Alphabetical (A-Z)"},
             {"value": "popularity", "label": "Most Popular"},
-            {"value": "recent", "label": "Recently Added"}
-        ]
+            {"value": "recent", "label": "Recently Added"},
+        ],
     }
 
 
 @app.get("/api/v1/catalogue/popular")
 async def get_popular_flowers(limit: int = 10):
-    """
-    Get most popular flowers (by search count)
-    
-    Query Parameters:
-    - limit: Number of results (default: 10, max: 50)
-    """
-    
     if limit > 50:
         limit = 50
-    
     popular = await db.get_popular_flowers(limit)
-    
-    return {
-        "popular_flowers": popular,
-        "count": len(popular)
-    }
+    return {"popular_flowers": popular, "count": len(popular)}
 
 
+# -----------------------------
+# Global exception handler
+# -----------------------------
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)},
+    )
