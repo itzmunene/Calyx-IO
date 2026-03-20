@@ -1,4 +1,4 @@
-// api.ts
+// frontend/src/lib/api.ts
 
 // Vite: uses import.meta.env.*
 // Local default: http://localhost:8000
@@ -6,19 +6,44 @@ const API_BASE =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ||
   "http://localhost:8000";
 
-export interface IdentificationResult {
-  scientific_name: string;
-  common_names: string[];
-  confidence: number;
-  primary_image_url: string | null;
-  alternatives?: AlternativeResult[];
+
+const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+const maxSize = 5 * 1024 * 1024;
+
+const API_KEY = import.meta.env.VITE_API_KEY;
+
+
+function validateBeforeUpload(file: File): string | null {
+  if (!allowedTypes.includes(file.type)) {
+    return "Please upload a JPG, PNG, or WEBP image.";
+  }
+
+  if (file.size > maxSize) {
+    return "File too large. Maximum allowed size is 5MB.";
+  }
+
+  return null;
 }
 
 export interface AlternativeResult {
+  id?: string;
   scientific_name: string;
   common_names: string[];
   confidence: number;
   primary_image_url: string | null;
+  trait_score?: number;
+}
+
+export interface IdentificationResult {
+  species_id?: string;
+  scientific_name: string;
+  common_names: string[];
+  confidence: number;
+  primary_image_url: string | null;
+  method?: string;
+  traits_extracted?: Record<string, any>;
+  alternatives?: AlternativeResult[];
+  response_time_ms?: number;
 }
 
 export interface SearchResult {
@@ -97,13 +122,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function identifyFlower(image: File): Promise<IdentificationResult> {
+  const validationError = validateBeforeUpload(image);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
   const formData = new FormData();
   formData.append("image", image);
 
-  return request<IdentificationResult>("/api/v1/identify", {
-    method: "POST",
-    body: formData,
-  });
+  const response = await fetch(`${API_BASE}/api/v1/identify`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${import.meta.env.VITE_API_KEY}`,
+  },
+  body: formData,
+});
+
+  if (!response.ok) {
+    let message = "Unable to identify the flower.";
+    try {
+      const data = await response.json();
+      message = data.detail || data.error || message;
+    } catch {
+      // keep fallback message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
 }
 
 export async function searchFlowers(query: string, limit = 20): Promise<SearchResult[]> {

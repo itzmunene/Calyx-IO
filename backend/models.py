@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 class SortBy(str, Enum):
-    alphabetical = "name"      
+    alphabetical = "name"
     popularity = "popularity"
     recent = "recent"
 
@@ -16,7 +16,6 @@ class FilterParams(BaseModel):
     color: Optional[List[str]] = None
     country: Optional[str] = None
     sort_by: SortBy = SortBy.alphabetical
-    page: int = 1
     limit: int = 20
 
 
@@ -39,18 +38,15 @@ class GrowingInfo(BaseModel):
 
 
 class IdentificationResponse(BaseModel):
-    """Response model for flower identification"""
-    species_id: str
+    species_id: Optional[str] = None
     scientific_name: str
     common_names: List[str]
     confidence: float
     primary_image_url: Optional[str] = None
-    method: str
-    traits_extracted: dict
-    alternatives: List[dict] = []
-    response_time_ms: int
-    # NEW: Add growing info to identification results
-    growing_info: Optional[GrowingInfo] = None
+    method: Optional[str] = None
+    traits_extracted: Optional[dict] = None
+    alternatives: Optional[list] = None
+    response_time_ms: Optional[int] = None
 
 
 class SearchResponse(BaseModel):
