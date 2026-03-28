@@ -27,37 +27,17 @@ class SupabaseClient:
     def _species_table(self):
         return self.client.table("species")
 
-    async def get_species_count(self) -> int:
-        try:
-            result = self.client.table("species").select("id", count=cast(Any, "exact")).execute()
-            return int(result.count or 0)
-        except Exception as e:
-            print(f"Error getting species count: {e}")
-            return 0
+    async def rpc(self, function_name: str, params: dict) -> List[JSONDict]:
+        response = self.client.rpc(function_name, params).execute()
+
+        data = response.data
+        if not isinstance(data, list):
+            return []
+
+        return cast(List[JSONDict], data)
 
     async def search_by_traits(self, traits: Dict[str, Any]) -> List[JSONDict]:
-        try:
-            query = self.client.table("species").select("*")
-
-            if traits.get("color_primary"):
-                query = query.contains("traits", {"color_primary": traits["color_primary"]})
-
-            if traits.get("petal_count"):
-                query = query.contains("traits", {"petal_count": traits["petal_count"]})
-
-            if traits.get("flower_size"):
-                query = query.contains("traits", {"flower_size": traits["flower_size"]})
-
-            result = query.limit(10).execute()
-            data = cast(List[JSONDict], result.data or [])
-
-            for species in data:
-                species["confidence"] = 0.85
-
-            return data
-        except Exception as e:
-            print(f"Error in trait search: {e}")
-            return []
+        return await self.rpc("search_by_traits", {"input_traits": traits})
 
     async def search_by_embedding(self, embedding: List[float]) -> List[JSONDict]:
         try:

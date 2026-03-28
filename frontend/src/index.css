@@ -117,6 +117,11 @@
     --sidebar-border: 90 15% 20%;
     --sidebar-ring: 90 45% 45%;
   }
+  
+  .backdrop-blur-xl:hover {
+  transform: translateY(-2px);
+  transition: all 0.2s ease;
+}
 }
 
 @layer base {

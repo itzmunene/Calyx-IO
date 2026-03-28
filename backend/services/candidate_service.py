@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Tuple
 
 from backend.database import SupabaseClient
 
+
 JSONDict = Dict[str, Any]
 
 
@@ -22,6 +23,9 @@ def _flatten_traits_for_db(traits: Dict[str, Any]) -> Dict[str, Any]:
         or color_traits.get("color_primary", []),
         "flower_size": shape_traits.get("flower_size"),
         "petal_count": shape_traits.get("petal_count"),
+        "petal_shape_outer": shape_traits.get("petal_shape_outer"),
+        "petal_shape_inner": shape_traits.get("petal_shape_inner"),
+        "petal_overlap": shape_traits.get("petal_overlap"),
     }
 
 
@@ -35,9 +39,17 @@ def _score_overlap(extracted: set[str], candidate: set[str], weight: float) -> f
 
     return min(overlap * weight, weight)
 
+def _apply_confidence(score: float, confidence: float | None, threshold: float = 0.4) -> float:
+    if confidence is None:
+        return score
+    if confidence < threshold:
+        return score * 0.3
+    return score * confidence
 
 def _score_color_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, Any]) -> float:
     score = 0.0
+
+    confidence = extracted.get("petal_color_confidence") or extracted.get("color_confidence")
 
     petal_primary = _safe_set(extracted.get("petal_color_primary"))
     petal_secondary = _safe_set(extracted.get("petal_color_secondary"))
@@ -50,11 +62,17 @@ def _score_color_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
     if score == 0.0:
         score += _score_overlap(fallback_primary, candidate_colors, 0.20)
 
-    return score
+    return _apply_confidence(score, confidence)
 
 
 def _score_shape_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, Any]) -> float:
     score = 0.0
+
+    # 👇 copy to avoid mutation
+    extracted = dict(extracted)
+
+    if extracted.get("petal_overlap") in ["moderate", "layered"]:
+        extracted["petal_count"] = None
 
     extracted_size = extracted.get("flower_size")
     candidate_size = candidate_traits.get("flower_size")
@@ -75,13 +93,21 @@ def _score_shape_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
 
     extracted_overlap = extracted.get("petal_overlap")
     candidate_overlap = candidate_traits.get("petal_overlap")
-    if extracted_overlap and candidate_overlap and str(extracted_overlap).lower() == str(candidate_overlap).lower():
-        score += 0.16
+    if extracted_overlap and candidate_overlap:
+        if extracted_overlap == candidate_overlap:
+            score += 0.16
 
-    extracted_shape = extracted.get("petal_shape")
-    candidate_shape = candidate_traits.get("petal_shape")
-    if extracted_shape and candidate_shape and str(extracted_shape).lower() == str(candidate_shape).lower():
-        score += 0.08
+    outer_shape = extracted.get("petal_shape_outer")
+    candidate_outer = candidate_traits.get("petal_shape_outer")
+    if outer_shape and candidate_outer:
+        if outer_shape == candidate_outer:
+            score += 0.10
+
+    inner_shape = extracted.get("petal_shape_inner")
+    candidate_inner = candidate_traits.get("petal_shape_inner")
+    if inner_shape and candidate_inner:
+        if inner_shape == candidate_inner:
+            score += 0.12
 
     extracted_margin = extracted.get("petal_margin")
     candidate_margin = candidate_traits.get("petal_margin")
@@ -92,7 +118,7 @@ def _score_shape_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
 
 
 def _score_pose_traits(extracted: Dict[str, Any], candidate: JSONDict) -> float:
-    candidate_traits = candidate.get("traits") or {}
+    candidate_traits = candidate.get("traits") or candidate
     score = 0.0
 
     extracted_flow = extracted.get("petal_flow")
@@ -104,14 +130,16 @@ def _score_pose_traits(extracted: Dict[str, Any], candidate: JSONDict) -> float:
 
 
 def _score_reproductive_traits(extracted: Dict[str, Any], candidate: JSONDict) -> float:
-    candidate_traits = candidate.get("traits") or {}
+    candidate_traits = candidate.get("traits") or candidate
     score = 0.0
 
     extracted_morphology = extracted.get("centre_morphology")
     candidate_morphology = candidate_traits.get("centre_morphology")
     if extracted_morphology and candidate_morphology:
         if str(extracted_morphology).lower() == str(candidate_morphology).lower():
-            score += 0.22
+            score += 0.4  # 🔥 dominant signal
+        else:
+            score -= 0.3  # ❗ penalty for mismatch
 
     for key, weight in [
         ("stamen_visible", 0.08),
@@ -126,18 +154,24 @@ def _score_reproductive_traits(extracted: Dict[str, Any], candidate: JSONDict) -
 
 
 def score_candidate(candidate: JSONDict, traits: Dict[str, Any]) -> float:
-    candidate_traits = candidate.get("traits") or {}
+    candidate_traits = candidate.get("traits") or candidate
 
     color_traits = traits.get("color_traits", {})
     shape_traits = traits.get("shape_traits", {})
     pose_traits = traits.get("pose_traits", {})
     reproductive_traits = traits.get("reproductive_traits", {})
 
+    # 🔥 HARD STRUCTURAL FILTER
+    if reproductive_traits.get("centre_morphology") == "filament_cluster_visible":
+        if candidate_traits.get("centre_morphology") == "simple_centre":
+            return 0.0
+
     score = 0.0
     score += _score_color_traits(color_traits, candidate_traits)
     score += _score_shape_traits(shape_traits, candidate_traits)
     score += _score_pose_traits(pose_traits, candidate)
     score += _score_reproductive_traits(reproductive_traits, candidate)
+    score += _score_structure(shape_traits, candidate_traits)
 
     return round(score, 4)
 
@@ -147,51 +181,66 @@ def rank_candidates(candidates: List[JSONDict], traits: Dict[str, Any]) -> List[
 
     for candidate in candidates:
         candidate_copy = dict(candidate)
-        candidate_copy["trait_score"] = score_candidate(candidate, traits)
+        score = score_candidate(candidate, traits)
+        candidate_copy["trait_score"] = score
+        candidate_copy["confidence"] = score
         ranked.append(candidate_copy)
 
     ranked.sort(key=lambda c: c.get("trait_score", 0.0), reverse=True)
     return ranked
 
+def _score_structure(extracted, candidate_traits):
+    score = 0.0
+
+    if extracted.get("petal_overlap") == "moderate":
+        if candidate_traits.get("petal_overlap") in ["moderate", "layered"]:
+            score += 0.15
+
+    return score
 
 async def resolve_candidates(
     db,
     traits: Dict[str, Any],
     embedding: List[float],
-) -> Tuple[List[JSONDict], str, bool]:
+) -> Tuple[List[JSONDict], str, bool, Dict[str, Any]]:
 
-    candidates = await db.search_by_traits(traits)
+    # 1. Trait search (DB function)
+    flat_traits = _flatten_traits_for_db(traits)
+    print("DB TRAITS:", flat_traits)
 
-
-    if embedding is None:
-        candidates = await db.search_by_traits(traits)
+    candidates = await db.rpc(
+        "search_by_traits",
+        {"input_traits": flat_traits}
+    )
 
     if not candidates:
-        return [], "trait_only_none", False
+        # ❌ No trait matches → fallback to vector
+        if embedding:
+            fallback = await db.rpc(
+                "search_by_embedding",
+                {"query_embedding": embedding}
+            )
+            return fallback[:20], "vector_shortlist", False, traits
 
+        return [], "no_match", False, traits
+
+    # ✅ Exact match
     if len(candidates) == 1:
-        return candidates, "trait_exact", True
-        return candidates[:20], "trait_shortlist", False
+        return candidates, "trait_exact", True, traits
 
-    # ❌ no trait matches → fallback shortlist
-    if not candidates:
-        fallback = await db.search_by_embedding(embedding)
-        return fallback[:20], "vector_shortlist", False
+    # 🔍 Rank locally (your Python scoring)
+    ranked = rank_candidates(candidates, traits)
 
-    # ✅ exact match
-    if len(candidates) == 1:
-        return candidates, "trait_exact", True
+    # 🔍 Try embedding refinement
+    if embedding:
+        refined = await db.refine_with_embedding(ranked, embedding)
 
-    # 🔍 refine
-    refined = await db.refine_with_embedding(candidates, embedding)
+        if refined:
+            if len(refined) == 1:
+                return refined, "trait_elimination", True, traits
+            return refined[:20], "trait_shortlist", False, traits
 
-    if not refined:
-        fallback = await db.search_by_embedding(embedding)
-        return fallback[:20], "vector_shortlist", False
+    # ⚠️ fallback → ranked shortlist
+    return ranked[:20], "trait_shortlist", False, traits
 
-    # ⚠️ still multiple → shortlist
-    if len(refined) > 1:
-        return refined[:20], "trait_shortlist", False
-
-    # ✅ resolved to 1
-    return refined, "trait_elimination", True
+    

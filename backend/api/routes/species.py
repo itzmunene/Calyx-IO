@@ -13,4 +13,6 @@ async def get_species(species_id: str, db=Depends(get_db)):
     if not species:
         raise HTTPException(status_code=404, detail="Species not found")
 
+    species["traits"] = species.get("traits") or {}
+
     return SpeciesDetail(**species)

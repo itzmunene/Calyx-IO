@@ -9,14 +9,19 @@ interface FlowerResultData {
   primary_image_url: string;
   confidence?: number;
   native_region?: string[];
-  traits?: {
-    climate?: string;
-    hardiness_zone?: string;
-    light_requirement?: string;
-    water_needs?: string;
-    soil_type?: string;
-  };
+  result?: FlowerResultData; // For single result mode
+  method?: string; // "single" or "list"
+  uploadedImage?: string; // For displaying the user's uploaded image
+  traits?: any; // For displaying extracted traits in debug mode
   bloom_season?: string[];
+}
+
+interface LocationState {
+  result?: FlowerResultData;
+  candidates?: any[]; // For list mode
+  uploadedImage?: string;
+  traits?: any;
+  method?: string;
 }
 
 function InfoSection({
@@ -38,13 +43,79 @@ function InfoSection({
   );
 }
 
+function GlassCard({
+  title,
+  items,
+  icon,
+}: {
+  title: string;
+  items: string[];
+  icon: string;
+}) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-2xl p-5 shadow-lg">
+      <h3 className="text-sm uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-2">
+        <span>{icon}</span> {title}
+      </h3>
+
+      <ul className="space-y-2 text-sm text-foreground">
+        {items.map((item, i) => (
+          <li key={i} className="leading-relaxed">
+            • {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+
+
+function formatTraits(traits: any) {
+  if (!traits) return null;
+
+  const color = traits.color_traits || {};
+  const shape = traits.shape_traits || {};
+  const repro = traits.reproductive_traits || {};
+
+  return {
+    colorSummary: [
+      color.petal_color_primary && `Primary colour: ${color.petal_color_primary}`,
+      color.petal_color_secondary && `Secondary tones: ${color.petal_color_secondary}`,
+    ].filter(Boolean),
+
+    shapeSummary: [
+      shape.petal_count && `${shape.petal_count} petals detected`,
+      shape.flower_size && `Flower size appears ${shape.flower_size}`,
+      shape.petal_shape && `Petal shape: ${shape.petal_shape}`,
+      shape.petal_margin && `Petal edges: ${shape.petal_margin}`,
+    ].filter(Boolean),
+
+    reproductiveSummary: [
+      repro.centre_morphology && `Centre type: ${repro.centre_morphology}`,
+      repro.stamen_visible && `Stamens clearly visible`,
+      repro.anther_visible && `Anthers detected`,
+      repro.stigma_visible && `Stigma visible`,
+    ].filter(Boolean),
+  };
+}
+
 export default function FlowerResult() {
   const location = useLocation();
+  const state = location.state as LocationState;
   const navigate = useNavigate();
-  const result: FlowerResultData | undefined = location.state?.result;
-  const uploadedImage: string | undefined = location.state?.uploadedImage;
+  const candidates = state?.candidates || [];
+  const traits = state?.traits;
+  const method = state?.method;
+  const result = state?.result;
+  const uploadedImage = state?.uploadedImage;
 
-  if (!result) {
+  const isSingle = !!result;
+  const isList = candidates?.length > 0;
+
+  if (!result && candidates.length === 0) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
@@ -121,17 +192,31 @@ export default function FlowerResult() {
                 )}
 
                 {/* Where It Grows */}
-                {result.traits &&
-                  (result.traits.climate || result.traits.hardiness_zone) && (
-                    <InfoSection icon="🌍" title="Where It Grows">
-                      {result.traits.climate && (
-                        <p>• Climate: {result.traits.climate}</p>
-                      )}
-                      {result.traits.hardiness_zone && (
-                        <p>• Hardiness: Zone {result.traits.hardiness_zone}</p>
-                      )}
-                    </InfoSection>
-                  )}
+                {traits && (() => {
+                  const formatted = formatTraits(traits);
+
+                  return (
+                    <div className="max-w-5xl mx-auto mt-10 grid md:grid-cols-3 gap-4">
+                      <GlassCard
+                        title="Petal Colour"
+                        icon="🎨"
+                        items={formatted?.colorSummary || []}
+                      />
+
+                      <GlassCard
+                        title="Flower Structure"
+                        icon="🌸"
+                        items={formatted?.shapeSummary || []}
+                      />
+
+                      <GlassCard
+                        title="Reproductive Features"
+                        icon="🧬"
+                        items={formatted?.reproductiveSummary || []}
+                      />
+                    </div>
+                  );
+                })()}
 
                 {/* Growing Conditions */}
                 {result.traits &&
@@ -158,6 +243,44 @@ export default function FlowerResult() {
                   </InfoSection>
                 )}
 
+              {/* Shortlist results */}
+              {isList && (
+                <div className="max-w-6xl mx-auto mt-10">
+                  <h2 className="text-xl font-semibold mb-4">
+                    Possible Matches
+                  </h2>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {candidates.slice(0, 20).map((c: any) => (
+                      <div key={c.id} className="bg-card p-3 rounded-xl shadow-card">
+                        <img
+                          src={c.primary_image_url}
+                          className="w-full h-32 object-cover rounded-md"
+                        />
+                        <p className="text-sm mt-2 font-medium">
+                          {c.common_names?.[0] || c.scientific_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {Math.round((c.confidence || 0) * 100)}%
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )} 
+              
+                {process.env.NODE_ENV === "development" && traits && (
+                  <div className="max-w-4xl mx-auto mt-10 glass-card p-6">
+                    <h3 className="text-lg font-semibold mb-4">
+                      Debug Traits
+                    </h3>
+
+                    <pre className="text-xs text-muted-foreground overflow-x-auto">
+                      {JSON.stringify(traits, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="pt-4 flex flex-col sm:flex-row gap-3">
                   <button className="btn-botanical inline-flex items-center justify-center gap-2">
@@ -179,5 +302,8 @@ export default function FlowerResult() {
         </div>
       </main>
     </div>
+
+
   );
 }
+

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
+from typing import Dict
 
 from pydantic import BaseModel
+from pydantic import Field
+from pydantic import BaseModel, Field, field_validator
 
 class SortBy(str, Enum):
     alphabetical = "name"
@@ -69,7 +72,11 @@ class SpeciesDetail(BaseModel):
     description: Optional[str]
     care_tips: Optional[str]
     bloom_season: Optional[List[str]]
-    traits: dict
+    traits: Dict[str, Any] = Field(default_factory=dict)
+    @field_validator("traits", mode="before")
+    @classmethod
+    def fix_null_traits(cls, v):    
+            return v or {}
     primary_image_url: Optional[str]
     thumbnail_url: Optional[str]
     

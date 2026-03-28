@@ -3,27 +3,41 @@ import { Navbar } from "@/components/Navbar";
 import { ImageUpload } from "@/components/ImageUpload";
 import { identifyFlower, type IdentificationResult } from "@/lib/api";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function Identify() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IdentificationResult | null>(null);
 
+  const navigate = useNavigate();
+
   const handleImageSelect = async (file: File) => {
-    setIsLoading(true);
-    setError(null);
+  setIsLoading(true);
+  setError(null);
 
-    try {
-      const result = await identifyFlower(file);
-      setResult(result);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to identify the flower.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  try {
+    const data = await identifyFlower(file);
 
+    setResult(data);
+
+    // ✅ NAVIGATE ONLY AFTER SUCCESS
+    navigate("/result", {
+      state: {
+        result: data,
+        candidates: data.alternatives || [],
+        traits: data.traits_extracted,
+        method: data.method,
+      },
+    });
+
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Unable to identify the flower.");
+  } finally {
+    setIsLoading(false);
+  }
+};
+  
   const handleRetry = () => {
     setError(null);
     setResult(null);

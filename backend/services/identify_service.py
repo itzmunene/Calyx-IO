@@ -57,12 +57,13 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
         embedding = None
 
     # ✅ CANDIDATES
-    candidates, method, exact_match_found = await resolve_candidates(
+    candidates, method, exact_match_found, resolved_traits = await resolve_candidates(
         db=db,
         traits=traits,
         embedding=embedding, # type: ignore
     )
 
+    
     response_time = int((time.time() - start_time) * 1000)
 
     # ❌ NO CANDIDATES AT ALL
@@ -74,7 +75,7 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
             confidence=0.0,
             primary_image_url=None,
             method=method,
-            traits_extracted=traits,
+            traits_extracted=resolved_traits,
             alternatives=[],
             response_time_ms=response_time,
         )
@@ -100,7 +101,7 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
     await db.cache_identification(
         image_hash=processed.image_hash,
         species_id=top_match["id"],
-        confidence=top_match["confidence"],
+        confidence=top_match.get("confidence", top_match.get("trait_score", 0.0)),
         traits=traits,
         method=method,
     )
@@ -109,7 +110,7 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
         species_id=top_match["id"],
         scientific_name=top_match["scientific_name"],
         common_names=top_match["common_names"],
-        confidence=top_match["confidence"],
+        confidence=top_match.get("confidence", top_match.get("trait_score", 0.0)),
         primary_image_url=top_match.get("primary_image_url"),
         method=method,
         traits_extracted=traits,
