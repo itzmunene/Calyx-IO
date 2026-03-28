@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import BaseModel, Field, field_validator
 
+from pydantic import field_validator
+
 class SortBy(str, Enum):
     alphabetical = "name"
     popularity = "popularity"
@@ -27,17 +29,23 @@ class IdentificationRequest(BaseModel):
 
 
 class GrowingInfo(BaseModel):
-    native_region: list[str] = []
-    climate_zones: list[str] = []
+    native_region: List[str] = Field(default_factory=list)
+    climate_zones: List[str] = Field(default_factory=list)
+    growing_season: List[str] = Field(default_factory=list)
+
     hardiness_zones: str | None = None
     light_requirement: str | None = None
     water_needs: str | None = None
     soil_preference: str | None = None
     ph_range: str | None = None
-    growing_season: list[str] = []
     mature_height: str | None = None
     mature_spread: str | None = None
     growth_rate: str | None = None
+
+    @field_validator("native_region", "climate_zones", "growing_season", mode="before")
+    @classmethod
+    def fix_null_lists(cls, v):
+        return v or []
 
 
 class IdentificationResponse(BaseModel):
