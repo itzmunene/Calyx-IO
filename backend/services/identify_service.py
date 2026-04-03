@@ -1,3 +1,4 @@
+import os
 import time
 from typing import Any, Dict, List, Tuple
 
@@ -9,34 +10,36 @@ from backend.services.image_processing_service import prepare_image
 from backend.services.trait_extractor import extract_traits
 from backend.services.candidate_service import resolve_candidates
 
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 async def identify_flower_service(*, image, use_cache, db, vision) -> IdentificationResponse:
     start_time = time.time()
 
     processed = await process_upload(image)
     prepared = prepare_image(processed.pil_image)
+    low_quality = prepared.blur_score < 15
 
-    print("\n=== IDENTIFY DEBUG ===")
-    print(f"Original size: {processed.pil_image.size}")
-    print(f"Working size: {prepared.working.size}")
-    print(f"Cropped size: {prepared.cropped_flower.size}")
-    print(f"Blur score: {prepared.blur_score:.2f}")
+    if DEBUG:
+        print("\n=== IDENTIFY DEBUG ===")
+        print(f"Original size: {processed.pil_image.size}")
+        print(f"Working size: {prepared.working.size}")
+        print(f"Cropped size: {prepared.cropped_flower.size}")
+        print(f"Blur score: {prepared.blur_score:.2f}")
 
-    prepared.cropped_flower.save("/tmp/calyx_last_crop.jpg")
+    if DEBUG:
+        prepared.cropped_flower.save(f"/tmp/calyx_{processed.image_hash}.jpg")
 
-    if prepared.blur_score < 20:
-        raise HTTPException(
-            status_code=400,
-            detail="Image looks too blurry. Try a clearer photo with the flower centred.",
-        )
+    if low_quality:
+        print("Low quality image, continuing anyway.")
 
     traits = extract_traits(prepared.cropped_flower)
 
-    print("Pose traits:", traits.get("pose_traits", {}))
-    print("Color traits:", traits.get("color_traits", {}))
-    print("Shape traits:", traits.get("shape_traits", {}))
-    print("Reproductive traits:", traits.get("reproductive_traits", {}))
-    print("=====================\n")
+    if DEBUG:
+        print("Pose traits:", traits.get("pose_traits", {}))
+        print("Color traits:", traits.get("color_traits", {}))
+        print("Shape traits:", traits.get("shape_traits", {}))
+        print("Reproductive traits:", traits.get("reproductive_traits", {}))
+        print("=====================\n")
 
     # ✅ CACHE
     if use_cache:
@@ -60,7 +63,7 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
     candidates, method, exact_match_found, resolved_traits = await resolve_candidates(
         db=db,
         traits=traits,
-        embedding=embedding, # type: ignore
+        embedding = embedding if embedding is not None else []
     )
 
     
@@ -83,37 +86,39 @@ async def identify_flower_service(*, image, use_cache, db, vision) -> Identifica
     # ✅ SAFE TOP MATCH
     top_match = candidates[0]
 
+    MIN_CONFIDENCE = 0.25
+
     # 🔶 SHORTLIST MODE (NO EXACT MATCH)
-    if not exact_match_found:
+    if not exact_match_found or top_match.get("trait_score", 0.0) < MIN_CONFIDENCE:
         return IdentificationResponse(
             species_id=top_match.get("id"), # pyright: ignore[reportArgumentType]
             scientific_name=top_match.get("scientific_name", "Unknown"),
             common_names=top_match.get("common_names", ["Unknown"]),
-            confidence=top_match.get("confidence", 0.0),
+            confidence=top_match.get("trait_score", 0.0),
             primary_image_url=top_match.get("primary_image_url"),
             method=method,
-            traits_extracted=traits,
-            alternatives=candidates[:20],  # 🔥 TOP 20 shortlist
+            traits_extracted=resolved_traits,
+            alternatives=candidates[1:6], 
             response_time_ms=response_time,
         )
 
     # ✅ EXACT MATCH → CACHE IT
     await db.cache_identification(
         image_hash=processed.image_hash,
-        species_id=top_match["id"],
-        confidence=top_match.get("confidence", top_match.get("trait_score", 0.0)),
-        traits=traits,
+        species_id=top_match.get("id"),
+        confidence=top_match.get("trait_score", 0.0),
+        traits=resolved_traits,
         method=method,
     )
 
     return IdentificationResponse(
-        species_id=top_match["id"],
+        species_id=top_match.get("id"), # type: ignore
         scientific_name=top_match["scientific_name"],
         common_names=top_match["common_names"],
-        confidence=top_match.get("confidence", top_match.get("trait_score", 0.0)),
+        confidence=top_match.get("trait_score", 0.0),
         primary_image_url=top_match.get("primary_image_url"),
         method=method,
-        traits_extracted=traits,
-        alternatives=candidates[1:4],
+        traits_extracted=resolved_traits,
+        alternatives=candidates[1:6],
         response_time_ms=response_time,
     )

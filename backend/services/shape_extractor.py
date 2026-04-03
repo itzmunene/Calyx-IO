@@ -30,6 +30,10 @@ def _ring_masks(h: int, w: int):
     )
 
 
+def _safe_mean(arr: np.ndarray) -> float:
+    return float(arr.mean()) if arr.size > 0 else 0.0
+
+
 # ------------------------
 # BASIC ESTIMATES
 # ------------------------
@@ -45,28 +49,66 @@ def estimate_flower_size(img: Image.Image) -> str:
 
 
 def estimate_petal_count(img: Image.Image) -> int | None:
-    area = img.size[0] * img.size[1]
+    gray = _to_gray(img)
+    edges = _edge_strength(gray)
 
-    if area < 80_000:
-        return 5
-    if area < 180_000:
-        return 6
-    return 10
+    h, w = gray.shape
+    cy, cx = h / 2.0, w / 2.0
 
+    radius = int(min(h, w) * 0.35)
+    if radius < 10:
+        return None
+
+    samples = 72  # 5° resolution
+    values = []
+
+    for i in range(samples):
+        theta = 2 * np.pi * (i / samples)
+        x = int(cx + radius * np.cos(theta))
+        y = int(cy + radius * np.sin(theta))
+
+        if 0 <= x < w and 0 <= y < h:
+            values.append(edges[y, x])
+        else:
+            values.append(0.0)
+
+    values = np.array(values)
+
+    # smooth signal slightly
+    kernel = np.ones(5) / 5
+    smooth = np.convolve(values, kernel, mode="same")
+
+    # detect peaks
+    peaks = 0
+    threshold = smooth.mean() + smooth.std() * 0.5
+
+    for i in range(1, len(smooth) - 1):
+        if smooth[i] > smooth[i - 1] and smooth[i] > smooth[i + 1] and smooth[i] > threshold:
+            peaks += 1
+
+    # sanity clamp
+    if peaks > samples // 2:
+        return None
+    if peaks < 3:
+        return None
+    if peaks > 20:
+        return 20
+
+    return peaks
 
 # ------------------------
-# SHAPE LOGIC (FIXED 🔥)
+# SHAPE LOGIC
 # ------------------------
 
 def estimate_structure(inner, middle, outer, centre_visible):
     if not centre_visible:
         return "closed"
 
-    if outer > middle * 1.1:
-        return "open"
-
     if inner > 0.10 and middle > 0.12:
         return "layered"
+
+    if outer > middle * 1.1:
+        return "open"
 
     return "moderate"
 
@@ -124,11 +166,12 @@ def extract_shape_traits(img: Image.Image, pose_traits: Dict[str, Any] | None = 
     h, w = gray.shape
     inner_mask, middle_mask, outer_mask = _ring_masks(h, w)
 
-    inner = float(edges[inner_mask].mean())
-    middle = float(edges[middle_mask].mean())
-    outer = float(edges[outer_mask].mean())
+    inner = _safe_mean(edges[inner_mask])
+    middle = _safe_mean(edges[middle_mask])
+    outer = _safe_mean(edges[outer_mask])
 
-    centre_visible = bool((pose_traits or {}).get("centre_visible", False))
+    pose_traits = pose_traits or {}
+    centre_visible = bool(pose_traits.get("centre_visible", False))
 
     structure = estimate_structure(inner, middle, outer, centre_visible)
 
@@ -136,7 +179,7 @@ def extract_shape_traits(img: Image.Image, pose_traits: Dict[str, Any] | None = 
 
     return {
         "flower_size": estimate_flower_size(img),
-        "petal_count": estimate_petal_count(img),
+        "petal_count": estimate_petal_count(img) if centre_visible else None,
 
         "petal_shape_outer": petal_outer,
         "petal_shape_inner": petal_inner,
@@ -147,3 +190,5 @@ def extract_shape_traits(img: Image.Image, pose_traits: Dict[str, Any] | None = 
 
         "bloom_openness": estimate_bloom_openness(centre_visible, structure),
     }
+
+# rprint(f"[PETALS] peaks={peaks}, threshold={threshold:.4f}")

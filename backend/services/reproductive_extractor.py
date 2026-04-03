@@ -34,6 +34,14 @@ def _extract_patch(
 
 
 def _rgb_to_hsv_array(patch: np.ndarray) -> np.ndarray:
+    if patch.size == 0:
+        return np.zeros((*patch.shape[:2], 3), dtype=np.float32)
+
+    if patch.dtype != np.float32:
+        patch = patch.astype(np.float32)
+        if patch.max() > 1.0:
+            patch /= 255.0
+
     flat = patch.reshape(-1, 3)
     hsv = np.zeros_like(flat)
 
@@ -50,10 +58,7 @@ def _find_reproductive_hotspot(
     search_ratio: float = 0.40,
     patch_ratio: float = 0.16,
 ) -> Tuple[tuple[float, float], np.ndarray]:
-    """
-    Search a local neighbourhood around the centre for likely
-    reproductive structures such as anthers/stamens.
-    """
+
     h, w, _ = arr.shape
 
     if centre_point is None:
@@ -63,8 +68,6 @@ def _find_reproductive_hotspot(
 
     search_w = max(int(w * search_ratio), 40)
     search_h = max(int(h * search_ratio), 40)
-    patch_w = max(int(w * patch_ratio), 20)
-    patch_h = max(int(h * patch_ratio), 20)
 
     sx1 = max(int(cx - search_w / 2), 0)
     sx2 = min(int(cx + search_w / 2), w)
@@ -72,16 +75,20 @@ def _find_reproductive_hotspot(
     sy2 = min(int(cy + search_h / 2), h)
 
     search = arr[sy1:sy2, sx1:sx2]
+
+    if search.size == 0:
+        fallback_patch = _extract_patch(arr, centre_point, ratio=patch_ratio)
+        return (cx, cy), fallback_patch
+
     hsv = _rgb_to_hsv_array(search)
     gray = search.mean(axis=2)
     edges = _edge_strength(gray)
 
-    # Warm + high saturation + darker than white petals + edge-rich
     hue = hsv[:, :, 0]
     sat = hsv[:, :, 1]
     val = hsv[:, :, 2]
 
-    warm_mask = ((hue >= 5) & (hue <= 40))  # red/orange/brown-ish anther zone
+    warm_mask = ((hue >= 5) & (hue <= 40))
     sat_mask = sat > 0.28
     val_mask = val < 0.80
 
@@ -99,10 +106,10 @@ def _find_reproductive_hotspot(
     max_idx = np.unravel_index(np.argmax(hotspot_score), hotspot_score.shape)
     hy, hx = max_idx
 
-    hotspot_cx = sx1 + hx
-    hotspot_cy = sy1 + hy
+    hotspot_cx = float(sx1 + hx)
+    hotspot_cy = float(sy1 + hy)
 
-    patch = _extract_patch(arr, (hotspot_cx, hotspot_cy), ratio=patch_ratio) # type: ignore
+    patch = _extract_patch(arr, (hotspot_cx, hotspot_cy), ratio=patch_ratio)
     return (float(hotspot_cx), float(hotspot_cy)), patch
 
 
@@ -110,6 +117,7 @@ def extract_reproductive_traits(
     img: Image.Image,
     pose_traits: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+
     pose_traits = pose_traits or {}
     centre_visible = bool(pose_traits.get("centre_visible", False))
     pose_confidence = float(pose_traits.get("pose_confidence", 0.0))
@@ -154,14 +162,7 @@ def extract_reproductive_traits(
     bright_mask = val > 0.80
 
     warm_ratio = float(np.mean(warm_mask))
-    dark_ratio = float(np.mean(dark_mask))
     bright_ratio = float(np.mean(bright_mask))
-
-    print(
-        f"[REPRO DEBUG] hotspot={hotspot_point}, edge={edge_score:.4f}, "
-        f"contrast={contrast_score:.4f}, warm_ratio={warm_ratio:.4f}, "
-        f"dark_ratio={dark_ratio:.4f}, bright_ratio={bright_ratio:.4f}"
-    )
 
     anther_visible = warm_ratio > 0.015 and contrast_score > 0.06
     stamen_visible = (edge_score > 0.12 and contrast_score > 0.05) or anther_visible

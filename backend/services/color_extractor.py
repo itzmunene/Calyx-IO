@@ -1,3 +1,4 @@
+from logging import DEBUG
 from typing import Any, Dict, List, Tuple
 import colorsys
 
@@ -36,6 +37,12 @@ COLOR_FAMILY_MAP = {
     "cream": "white",
 }
 
+COLOR_FAMILIES = {
+    "red": ["red", "pink", "magenta"],
+    "pink": ["pink", "red", "magenta"],
+    "yellow": ["yellow", "orange"],
+    "purple": ["purple", "magenta"],
+}
 
 def _to_hsv_pixels(img: Image.Image) -> np.ndarray:
     rgb = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
@@ -126,7 +133,7 @@ def _filter_pixels_for_region(
     too_grey = sat < 0.05
 
     if suppress_green:
-        green_heavy = (g > r + 0.06) & (g > b + 0.06) & (hue >= 70) & (hue <= 170)
+        green_heavy = (g > r + 0.10) & (g > b + 0.06) & (hue >= 70) & (hue <= 170)
         mask = ~(green_heavy | too_dark | too_grey)
     else:
         mask = ~(too_dark | too_grey)
@@ -209,31 +216,42 @@ def extract_color_traits(img: Image.Image, pose_traits: Dict[str, Any] | None = 
     centre_colors = _summarise_region_colors(inner_rgb, inner_hsv)
     petal_colors = _summarise_region_colors(outer_rgb, outer_hsv)
 
-    print(
-        f"[COLOR DEBUG] centre={centre_colors}, "
-        f"petal={petal_colors}"
-    )
+    if DEBUG:
+        print(
+            f"[COLOR DEBUG] centre={centre_colors}, "
+            f"petal={petal_colors}"
+        )
 
     # keep legacy combined values too
-    combined_primary = petal_colors["primary"]
-    combined_secondary = petal_colors["secondary"]
     combined_detailed = list(dict.fromkeys(petal_colors["detailed"] + centre_colors["detailed"]))[:4]
-    combined_confidence = petal_colors["confidence"]
+    combined_confidence = max(
+        petal_colors["confidence"],
+        centre_colors["confidence"] * 0.8,
+    )
 
     return {
-        "petal_color_primary": petal_colors["primary"],
-        "petal_color_secondary": petal_colors["secondary"],
+        "petal_color_primary": expand_and_normalize_colors(petal_colors["primary"]),
+        "petal_color_secondary": expand_and_normalize_colors(petal_colors["secondary"]),
         "petal_color_detailed": petal_colors["detailed"],
         "petal_color_confidence": petal_colors["confidence"],
 
-        "centre_color_primary": centre_colors["primary"],
-        "centre_color_secondary": centre_colors["secondary"],
+        "centre_color_primary": expand_and_normalize_colors(centre_colors["primary"]),
+        "centre_color_secondary": expand_and_normalize_colors(centre_colors["secondary"]),
         "centre_color_detailed": centre_colors["detailed"],
         "centre_color_confidence": centre_colors["confidence"],
 
-        # legacy / fallback combined
-        "color_primary": combined_primary,
-        "color_secondary": combined_secondary,
+        # fallback / combined
+        "color_primary": expand_and_normalize_colors(petal_colors["primary"]),
+        "color_secondary": expand_and_normalize_colors(petal_colors["secondary"]),
         "color_detailed": combined_detailed,
         "color_confidence": combined_confidence,
     }
+
+def expand_and_normalize_colors(colors):
+    expanded = set()
+    for c in colors:
+        base = _collapse_to_family(c)
+        expanded.add(base)
+        expanded.update(COLOR_FAMILIES.get(base, [])[:2])
+    return sorted(expanded)
+    

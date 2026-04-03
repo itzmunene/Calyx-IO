@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 
 
 @dataclass
@@ -14,13 +14,34 @@ class PreparedImage:
     width: int
     height: int
 
+def prepare_image(img: Image.Image) -> PreparedImage:
+    img = img.convert("RGB")
+    working = _resize_for_processing(img)
+    blur_score = _estimate_blur(working)
+
+
+    crop = _find_flower_like_crop(working)
+    if crop is None:
+        crop = _center_crop(working)
+
+    return PreparedImage(
+        original=img,
+        working=working,
+        cropped_flower=crop,
+        blur_score=blur_score,
+        width=working.size[0],
+        height=working.size[1],
+    )
+
 
 def _resize_for_processing(img: Image.Image, max_side: int = 768) -> Image.Image:
     w, h = img.size
+    if max(w, h) == 0:
+        return img
+    
     scale = min(max_side / max(w, h), 1.0)
     new_size = (int(w * scale), int(h * scale))
-    return img.resize(new_size, Image.Resampling.LANCZOS)
-
+    return img.resize(new_size, Image.Resampling.LANCZOS) 
 
 def _estimate_blur(img: Image.Image) -> float:
     # simple variance-based blur estimate using grayscale edges
@@ -30,7 +51,7 @@ def _estimate_blur(img: Image.Image) -> float:
     gx = np.diff(arr, axis=1)
     gy = np.diff(arr, axis=0)
 
-    score = float(np.var(gx) + np.var(gy))
+    score = float((np.var(gx) + np.var(gy)) / (arr.size + 1e-6))
     return score
 
 
@@ -53,10 +74,9 @@ def _find_flower_like_crop(img: Image.Image) -> Optional[Image.Image]:
     - prioritize center
     - prefer saturated areas likely to be petals
     """
-    rgb = img.convert("RGB")
-    arr = np.asarray(rgb, dtype=np.float32) / 255.0
 
-    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+
     maxc = np.max(arr, axis=2)
     minc = np.min(arr, axis=2)
     sat = maxc - minc
@@ -75,6 +95,10 @@ def _find_flower_like_crop(img: Image.Image) -> Optional[Image.Image]:
     threshold = np.percentile(score, 85)
     mask = score >= threshold
 
+    if np.sum(mask) < 50:
+        threshold = np.percentile(score, 70)
+        mask = score >= threshold
+
     ys, xs = np.where(mask)
     if len(xs) < 50 or len(ys) < 50:
         return None
@@ -83,8 +107,14 @@ def _find_flower_like_crop(img: Image.Image) -> Optional[Image.Image]:
     y1, y2 = int(ys.min()), int(ys.max())
 
     # pad the box a bit
-    pad_x = int((x2 - x1) * 0.15) + 10
-    pad_y = int((y2 - y1) * 0.15) + 10
+    PADDING_RATIO = 0.15
+    MIN_PADDING = 10
+    pad_x = int((x2 - x1) * PADDING_RATIO) + MIN_PADDING
+    pad_y = int((y2 - y1) * PADDING_RATIO) + MIN_PADDING
+
+    aspect_ratio = (x2 - x1) / (y2 - y1 + 1e-6)
+    if aspect_ratio > 4 or aspect_ratio < 0.25:
+        return None
 
     x1 = max(x1 - pad_x, 0)
     y1 = max(y1 - pad_y, 0)
@@ -96,20 +126,3 @@ def _find_flower_like_crop(img: Image.Image) -> Optional[Image.Image]:
 
     return img.crop((x1, y1, x2, y2))
 
-
-def prepare_image(img: Image.Image) -> PreparedImage:
-    working = _resize_for_processing(img)
-    blur_score = _estimate_blur(working)
-
-    crop = _find_flower_like_crop(working)
-    if crop is None:
-        crop = _center_crop(working)
-
-    return PreparedImage(
-        original=img,
-        working=working,
-        cropped_flower=crop,
-        blur_score=blur_score,
-        width=working.size[0],
-        height=working.size[1],
-    )

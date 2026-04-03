@@ -7,15 +7,13 @@ def extract_pose_traits(img: Image.Image) -> Dict[str, Any]:
     arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
     h, w, _ = arr.shape
 
-    # crude centre prior
-    cx = w / 2.0
-    cy = h / 2.0
-
     # central window brightness/contrast proxy
     x1, x2 = int(w * 0.35), int(w * 0.65)
     y1, y2 = int(h * 0.35), int(h * 0.65)
-    centre_patch = arr[y1:y2, x1:x2]
+    cx = w / 2.0
+    cy = h / 2.0
 
+    centre_patch = arr[y1:y2, x1:x2]
     if centre_patch.size == 0:
         return {
             "centre_visible": False,
@@ -26,9 +24,18 @@ def extract_pose_traits(img: Image.Image) -> Dict[str, Any]:
             "pose_confidence": 0.0,
             "centre_point": None,
         }
+    centre_grey = np.mean(centre_patch, axis=2)
+    contrast = float(np.std(centre_grey))
+    centre_visible = contrast > 0.06    
 
-    contrast = float(np.std(centre_patch))
-    centre_visible = contrast > 0.08
+    if centre_visible:
+        centre_point = (
+            round((x1 + x2) / 2, 1),
+            round((y1 + y2) / 2, 1),
+        )
+    else:
+        centre_point = (round(cx, 1), round(cy, 1))
+
 
     return {
         "centre_visible": centre_visible,
@@ -37,5 +44,5 @@ def extract_pose_traits(img: Image.Image) -> Dict[str, Any]:
         "stem_visible": False,
         "sepal_visible": False,
         "pose_confidence": round(min(max(contrast * 3.0, 0.0), 1.0), 3),
-        "centre_point": (round(cx, 1), round(cy, 1)),
+        "centre_point": centre_point,
     }

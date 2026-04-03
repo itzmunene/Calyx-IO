@@ -1,10 +1,13 @@
 from typing import Any, Dict, List, Tuple
 
-from backend.database import SupabaseClient
-
-
 JSONDict = Dict[str, Any]
 
+WEIGHTS = {
+    "color": 2.0,
+    "shape": 3.0,
+    "pose": 1.5,
+    "reproductive": 5.0,
+}
 
 def _safe_set(value: Any) -> set[str]:
     if value is None:
@@ -15,19 +18,36 @@ def _safe_set(value: Any) -> set[str]:
 
 
 def _flatten_traits_for_db(traits: Dict[str, Any]) -> Dict[str, Any]:
-    color_traits = traits.get("color_traits", {})
-    shape_traits = traits.get("shape_traits", {})
-
     return {
-        "color_primary": color_traits.get("petal_color_primary")
-        or color_traits.get("color_primary", []),
-        "flower_size": shape_traits.get("flower_size"),
-        "petal_count": shape_traits.get("petal_count"),
-        "petal_shape_outer": shape_traits.get("petal_shape_outer"),
-        "petal_shape_inner": shape_traits.get("petal_shape_inner"),
-        "petal_overlap": shape_traits.get("petal_overlap"),
+        "color_primary": traits.get("color_primary") or traits.get("petal_color_primary") or [],
+
+        "flower_size": traits.get("flower_size"),
+        "petal_count": traits.get("petal_count"),
+        "petal_shape_outer": traits.get("petal_shape_outer"),
+        "petal_shape_inner": traits.get("petal_shape_inner"),
+        "petal_overlap": None if traits.get("petal_overlap") == "moderate" else traits.get("petal_overlap"),
+        "petal_margin": traits.get("petal_margin"),
+        "bloom_openness": traits.get("bloom_openness"),
+
+        "centre_morphology": traits.get("centre_morphology"),
+        "stamen_visible": traits.get("stamen_visible"),
+        "anther_visible": traits.get("anther_visible"),
+        "stigma_visible": traits.get("stigma_visible"),
+
+        "petal_flow": traits.get("petal_flow"),
     }
 
+def normalize_traits(traits: dict) -> dict:
+    return {
+        "color_primary": traits.get("color_primary") or traits.get("petal_color_primary", []),
+        "flower_size": traits.get("flower_size"),
+        "petal_count": traits.get("petal_count"),
+        "petal_shape_outer": traits.get("petal_shape_outer"),
+        "petal_shape_inner": traits.get("petal_shape_inner"),
+        "petal_overlap": traits.get("petal_overlap"),
+        "centre_morphology": traits.get("centre_morphology"),
+        "stamen_visible": traits.get("stamen_visible"),
+    }
 
 def _score_overlap(extracted: set[str], candidate: set[str], weight: float) -> float:
     if not extracted or not candidate:
@@ -56,11 +76,12 @@ def _score_color_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
     fallback_primary = _safe_set(extracted.get("color_primary"))
     candidate_colors = _safe_set(candidate_traits.get("color_primary"))
 
-    score += _score_overlap(petal_primary, candidate_colors, 0.35)
-    score += _score_overlap(petal_secondary, candidate_colors, 0.15)
+    score += _score_overlap(petal_primary, candidate_colors, 0.25)
+    score += _score_overlap(petal_secondary, candidate_colors, 0.10)
 
+    # fallback boost
     if score == 0.0:
-        score += _score_overlap(fallback_primary, candidate_colors, 0.20)
+        score += 0.10  # don't zero out candidates completely
 
     return _apply_confidence(score, confidence)
 
@@ -86,16 +107,28 @@ def _score_shape_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
             diff = abs(int(extracted_petal_count) - int(candidate_petal_count))
             if diff == 0:
                 score += 0.18
-            elif diff == 1:
-                score += 0.10
+            elif diff <= 2:
+                score += 0.12 # tolerant match
+            elif diff <= 4:
+                score += 0.05 # weak tolerance
         except Exception:
             pass
+    
+    extracted_open = extracted.get("bloom_openness")
+    candidate_open = candidate_traits.get("bloom_openness")
+    if extracted_open and candidate_open:
+        if extracted_open == candidate_open:
+            score += 0.08
+        elif extracted_open == "partially_open" and candidate_open == "open":
+            score += 0.05 # partial credit for partially vs fully open
 
     extracted_overlap = extracted.get("petal_overlap")
     candidate_overlap = candidate_traits.get("petal_overlap")
     if extracted_overlap and candidate_overlap:
         if extracted_overlap == candidate_overlap:
             score += 0.16
+        elif extracted_overlap == "moderate" and candidate_overlap in ["moderate", "separate"]:
+            score += 0.10 # partial credit for moderate vs layered
 
     outer_shape = extracted.get("petal_shape_outer")
     candidate_outer = candidate_traits.get("petal_shape_outer")
@@ -124,7 +157,7 @@ def _score_pose_traits(extracted: Dict[str, Any], candidate: JSONDict) -> float:
     extracted_flow = extracted.get("petal_flow")
     candidate_flow = candidate_traits.get("petal_flow")
     if extracted_flow and candidate_flow and str(extracted_flow).lower() == str(candidate_flow).lower():
-        score += 0.06
+        score += 0.12
 
     return score
 
@@ -156,22 +189,29 @@ def _score_reproductive_traits(extracted: Dict[str, Any], candidate: JSONDict) -
 def score_candidate(candidate: JSONDict, traits: Dict[str, Any]) -> float:
     candidate_traits = candidate.get("traits") or candidate
 
-    color_traits = traits.get("color_traits", {})
-    shape_traits = traits.get("shape_traits", {})
-    pose_traits = traits.get("pose_traits", {})
-    reproductive_traits = traits.get("reproductive_traits", {})
+    # 🔥 traits are FLAT
+    color_traits = traits
+    shape_traits = traits
+    pose_traits = traits
+    reproductive_traits = traits
+
+    score = 0.0
+
+    # soft structural filtering
+    if shape_traits.get("flower_size") and candidate_traits.get("flower_size"):
+        if shape_traits["flower_size"] != candidate_traits["flower_size"]:
+            score -= 0.2
 
     # 🔥 HARD STRUCTURAL FILTER
     if reproductive_traits.get("centre_morphology") == "filament_cluster_visible":
         if candidate_traits.get("centre_morphology") == "simple_centre":
-            return 0.0
+            score -= 0.25
 
-    score = 0.0
-    score += _score_color_traits(color_traits, candidate_traits)
-    score += _score_shape_traits(shape_traits, candidate_traits)
-    score += _score_pose_traits(pose_traits, candidate)
-    score += _score_reproductive_traits(reproductive_traits, candidate)
-    score += _score_structure(shape_traits, candidate_traits)
+    # weighted scoring
+    score += _score_color_traits(color_traits, candidate_traits) * WEIGHTS["color"]
+    score += _score_shape_traits(shape_traits, candidate_traits) * WEIGHTS["shape"]
+    score += _score_pose_traits(pose_traits, candidate) * WEIGHTS["pose"]
+    score += _score_reproductive_traits(reproductive_traits, candidate) * WEIGHTS["reproductive"]
 
     return round(score, 4)
 
@@ -182,21 +222,15 @@ def rank_candidates(candidates: List[JSONDict], traits: Dict[str, Any]) -> List[
     for candidate in candidates:
         candidate_copy = dict(candidate)
         score = score_candidate(candidate, traits)
+
         candidate_copy["trait_score"] = score
-        candidate_copy["confidence"] = score
+        candidate_copy["confidence"] = min(score, 1.0)
+
         ranked.append(candidate_copy)
 
     ranked.sort(key=lambda c: c.get("trait_score", 0.0), reverse=True)
     return ranked
 
-def _score_structure(extracted, candidate_traits):
-    score = 0.0
-
-    if extracted.get("petal_overlap") == "moderate":
-        if candidate_traits.get("petal_overlap") in ["moderate", "layered"]:
-            score += 0.15
-
-    return score
 
 async def resolve_candidates(
     db,
