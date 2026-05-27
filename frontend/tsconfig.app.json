@@ -22,6 +22,10 @@
     "noImplicitAny": false,
     "noFallthroughCasesInSwitch": false,
 
+    /* ✅ FIX */
+    "ignoreDeprecations": "6.0",
+
+    /* Path alias (still valid for now) */
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]

@@ -1,14 +1,14 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 import numpy as np
 from PIL import Image
 
 
-# ------------------------
+# =========================
 # CORE SIGNALS
-# ------------------------
+# =========================
 
-def _to_gray(img: Image.Image) -> np.ndarray:
-    return np.asarray(img.convert("L"), dtype=np.float32) / 255.0
+def _to_gray(arr: np.ndarray) -> np.ndarray:
+    return np.dot(arr, [0.299, 0.587, 0.114])
 
 
 def _edge_strength(gray: np.ndarray) -> np.ndarray:
@@ -17,178 +17,224 @@ def _edge_strength(gray: np.ndarray) -> np.ndarray:
     return gx + gy
 
 
-def _ring_masks(h: int, w: int):
-    yy, xx = np.mgrid[0:h, 0:w]
-    cy, cx = h / 2.0, w / 2.0
-    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-    dist /= (np.max(dist) + 1e-6)
+# =========================
+# FAST HSV (VECTORISED FIX)
+# =========================
 
-    return (
-        dist <= 0.20,
-        (dist > 0.20) & (dist <= 0.40),
-        (dist > 0.40) & (dist <= 0.85),
-    )
+def _rgb_to_hsv(arr: np.ndarray) -> np.ndarray:
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+    maxc = np.max(arr, axis=2)
+    minc = np.min(arr, axis=2)
+    v = maxc
+
+    s = np.zeros_like(maxc)
+    mask = maxc != 0
+    s[mask] = (maxc - minc)[mask] / maxc[mask]
+
+    h = np.zeros_like(maxc)
+
+    rc = (maxc - r) / (maxc - minc + 1e-6)
+    gc = (maxc - g) / (maxc - minc + 1e-6)
+    bc = (maxc - b) / (maxc - minc + 1e-6)
+
+    h[r == maxc] = (bc - gc)[r == maxc]
+    h[g == maxc] = 2.0 + (rc - bc)[g == maxc]
+    h[b == maxc] = 4.0 + (gc - rc)[b == maxc]
+
+    h = (h / 6.0) % 1.0
+    h *= 360
+
+    return np.stack([h, s, v], axis=2)
 
 
-def _safe_mean(arr: np.ndarray) -> float:
-    return float(arr.mean()) if arr.size > 0 else 0.0
+# =========================
+# IPS (INNER PETAL START)
+# =========================
+
+def _estimate_ips_radius(hsv, centre, max_radius):
+    cx, cy = centre
+    h, w = hsv.shape[:2]
+
+    radii = np.linspace(5, max_radius, 20)
+    best_radius = int(max_radius * 0.25)
+    best_score = 0.0
+
+    for r in radii:
+        samples = []
+        for i in range(36):
+            theta = 2 * np.pi * (i / 36)
+            x = int(cx + r * np.cos(theta))
+            y = int(cy + r * np.sin(theta))
+
+            if 0 <= x < w and 0 <= y < h:
+                s = hsv[y, x, 1]
+                v = hsv[y, x, 2]
+                samples.append(s * v)
+
+        if samples:
+            score = np.mean(samples)
+            if score > best_score:
+                best_score = score
+                best_radius = int(r)
+
+    return best_radius
 
 
-# ------------------------
-# BASIC ESTIMATES
-# ------------------------
+# =========================
+# RADIAL SCAN
+# =========================
 
-def estimate_flower_size(img: Image.Image) -> str:
-    area = img.size[0] * img.size[1]
-
-    if area < 80_000:
-        return "small"
-    if area < 180_000:
-        return "medium"
-    return "large"
-
-
-def estimate_petal_count(img: Image.Image) -> int | None:
-    gray = _to_gray(img)
-    edges = _edge_strength(gray)
-
+def _radial_contrast_scan(gray, centre, ips_radius, max_radius, samples=90):
+    cx, cy = centre
     h, w = gray.shape
-    cy, cx = h / 2.0, w / 2.0
 
-    radius = int(min(h, w) * 0.35)
-    if radius < 10:
-        return None
-
-    samples = 72  # 5° resolution
-    values = []
+    horizons = []
 
     for i in range(samples):
         theta = 2 * np.pi * (i / samples)
-        x = int(cx + radius * np.cos(theta))
-        y = int(cy + radius * np.sin(theta))
+        values = []
 
-        if 0 <= x < w and 0 <= y < h:
-            values.append(edges[y, x])
-        else:
-            values.append(0.0)
+        for r in range(ips_radius, max_radius):
+            x = int(cx + r * np.cos(theta))
+            y = int(cy + r * np.sin(theta))
 
-    values = np.array(values)
+            if 0 <= x < w and 0 <= y < h:
+                values.append(gray[y, x])
 
-    # smooth signal slightly
-    kernel = np.ones(5) / 5
-    smooth = np.convolve(values, kernel, mode="same")
+        if len(values) < 5:
+            continue
 
-    # detect peaks
-    peaks = 0
-    threshold = smooth.mean() + smooth.std() * 0.5
+        values = np.array(values)
+        diffs = np.abs(np.diff(values))
+        threshold = diffs.mean() + diffs.std()
 
-    for i in range(1, len(smooth) - 1):
-        if smooth[i] > smooth[i - 1] and smooth[i] > smooth[i + 1] and smooth[i] > threshold:
-            peaks += 1
+        spike_count = int(np.sum(diffs > threshold))
+        horizons.append(spike_count)
 
-    # sanity clamp
-    if peaks > samples // 2:
-        return None
-    if peaks < 3:
-        return None
-    if peaks > 20:
-        return 20
+    if not horizons:
+        return 0, 0.0
 
-    return peaks
+    return int(np.mean(horizons)), float(np.std(horizons))
 
-# ------------------------
+
+# =========================
 # SHAPE LOGIC
-# ------------------------
+# =========================
 
-def estimate_structure(inner, middle, outer, centre_visible):
-    if not centre_visible:
-        return "closed"
-
-    if inner > 0.10 and middle > 0.12:
-        return "layered"
-
-    if outer > middle * 1.1:
-        return "open"
-
-    return "moderate"
-
-
-def estimate_petal_overlap(inner, middle, outer, centre_visible):
-    if centre_visible:
-        if inner > 0.11 and middle > 0.13:
-            return "layered"
-
-        if middle > outer:
-            return "moderate"
-
-    if outer > middle * 1.18:
-        return "separate"
-
-    return "moderate"
-
-
-def estimate_petal_shapes(inner, middle, outer, centre_visible):
-    if centre_visible:
-        return "rounded", "clustered"
-
-    if outer > middle:
-        return "oval", "none"
-
-    return "rounded", "none"
-
-
-def estimate_margin(edge_map):
-    variation = float(edge_map.std())
-
-    if variation < 0.04:
+def _estimate_margin(edges):
+    v = float(edges.std())
+    if v < 0.04:
         return "smooth"
-    if variation < 0.08:
+    if v < 0.08:
         return "slightly_serrated"
     return "ruffled"
 
 
-def estimate_bloom_openness(centre_visible, structure):
-    if not centre_visible:
+def _classify_structure(horizon_count, spacing):
+    if horizon_count <= 1:
+        return "fused"
+    if horizon_count > 6 and spacing < 2.5:
+        return "layered"
+    if horizon_count > 3:
+        return "open"
+    return "moderate"
+
+
+def _estimate_overlap(structure):
+    return {
+        "layered": "layered",
+        "fused": "moderate",
+        "open": "separate"
+    }.get(structure, "moderate")
+
+
+def _estimate_shapes(structure):
+    if structure == "layered":
+        return "rounded", "clustered"
+    if structure == "fused":
+        return "oval", "none"
+    return "rounded", "none"
+
+
+def _estimate_bloom(structure):
+    if structure == "fused":
         return "closed"
     if structure == "open":
         return "open"
     return "partially_open"
 
 
-# ------------------------
-# MAIN EXTRACTOR
-# ------------------------
+# =========================
+# CLUSTER PROCESSOR
+# =========================
 
-def extract_shape_traits(img: Image.Image, pose_traits: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    gray = _to_gray(img)
+def _process_cluster(arr, hsv, cluster):
+    h, w = arr.shape[:2]
+
+    cx = int(cluster["centre"][0] / 1000 * w)
+    cy = int(cluster["centre"][1] / 1000 * h)
+
+    major = int(cluster["bbox"]["major_axis"])
+    max_radius = max(20, int(major * 0.6))
+
+    gray = _to_gray(arr)
     edges = _edge_strength(gray)
 
-    h, w = gray.shape
-    inner_mask, middle_mask, outer_mask = _ring_masks(h, w)
+    ips_radius = _estimate_ips_radius(hsv, (cx, cy), max_radius)
+    horizon_count, spacing = _radial_contrast_scan(
+        gray, (cx, cy), ips_radius, max_radius
+    )
 
-    inner = _safe_mean(edges[inner_mask])
-    middle = _safe_mean(edges[middle_mask])
-    outer = _safe_mean(edges[outer_mask])
+    structure = _classify_structure(horizon_count, spacing)
+    petal_count = max(3, min(horizon_count * 2, 20))
 
-    pose_traits = pose_traits or {}
-    centre_visible = bool(pose_traits.get("centre_visible", False))
-
-    structure = estimate_structure(inner, middle, outer, centre_visible)
-
-    petal_outer, petal_inner = estimate_petal_shapes(inner, middle, outer, centre_visible)
+    outer, inner = _estimate_shapes(structure)
 
     return {
-        "flower_size": estimate_flower_size(img),
-        "petal_count": estimate_petal_count(img) if centre_visible else None,
+        "cluster_id": cluster["id"],
+        "petal_count": int(petal_count),
+        "petal_shape_outer": outer,
+        "petal_shape_inner": inner,
+        "petal_overlap": _estimate_overlap(structure),
+        "petal_margin": _estimate_margin(edges),
+        "bloom_openness": _estimate_bloom(structure),
 
-        "petal_shape_outer": petal_outer,
-        "petal_shape_inner": petal_inner,
-
-        "petal_overlap": estimate_petal_overlap(inner, middle, outer, centre_visible),
-
-        "petal_margin": estimate_margin(edges),
-
-        "bloom_openness": estimate_bloom_openness(centre_visible, structure),
+        # debug signals
+        "ips_radius": int(ips_radius),
+        "horizon_count": int(horizon_count),
+        "horizon_variance": round(spacing, 3),
+        "structure_type": structure,
     }
 
-# rprint(f"[PETALS] peaks={peaks}, threshold={threshold:.4f}")
+
+# =========================
+# MAIN ENTRYPOINT (FIXED)
+# =========================
+
+async def extract_shape_traits(
+    img: Image.Image,
+    pose_data: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    arr = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    hsv = _rgb_to_hsv(arr)
+
+    clusters = pose_data.get("clusters", [])
+
+    if not clusters:
+        return {"cluster_shapes": []}
+
+    results: List[Dict[str, Any]] = []
+
+    for cluster in clusters:
+        results.append(_process_cluster(arr, hsv, cluster))
+
+    output = {
+        "cluster_shapes": results
+    }
+
+    if results:
+        output.update(results[0])  # primary cluster
+
+    return output

@@ -21,13 +21,13 @@ export default function Identify() {
 
     setResult(data);
 
-    // ✅ NAVIGATE ONLY AFTER SUCCESS
     navigate("/result", {
       state: {
         result: data,
-        candidates: data.alternatives || [],
-        traits: data.traits_extracted,
-        method: data.method,
+        debug_image_url: data?.debug_image_url ?? null,
+        candidates: data?.alternatives ?? [],
+        traits: data?.traits_extracted ?? null,
+        method: data?.method ?? null,
       },
     });
 

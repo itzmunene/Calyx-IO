@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 import numpy as np
-
+from typing import Optional, Dict, Any
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -21,6 +21,7 @@ class ProcessedImage:
     pil_image: Image.Image
     filename: str
     content_type: str
+    image_metadata: Optional[Dict[str, Any]] = None
 
 
 async def process_upload(image: UploadFile) -> ProcessedImage:
@@ -95,16 +96,41 @@ async def process_upload(image: UploadFile) -> ProcessedImage:
             detail="Image appears too uniform or blank.",
         )
 
-    # entropy (light stego / noise detection)
+    # ------------------------
+    # entropy + vibrance signals (soft handling)
+    # ------------------------
+
+    # entropy (distribution complexity)
     hist = np.histogram(arr, bins=256)[0]
     prob = hist / (hist.sum() + 1e-6)
-    entropy = -np.sum(prob * np.log2(prob + 1e-9))
+    entropy = float(-np.sum(prob * np.log2(prob + 1e-9)))
 
-    if entropy > 7.8:
-        raise HTTPException(
-            status_code=400,
-            detail="Image appears unusually noisy or encoded.",
-        )
+    # vibrance proxy (pixel variation)
+    std_val = float(arr.std())
+
+    # ------------------------
+    # soft penalty (NO blocking)
+    # ------------------------
+
+    noise_penalty = 1.0
+
+    if entropy > 7.95 and std_val > 0.35:
+        noise_penalty = 0.85
+    elif entropy > 7.85:
+        noise_penalty = 0.92
+
+    # ------------------------
+    # visual finish classification (🔥 new signal)
+    # ------------------------
+
+    if std_val < 0.12:
+        color_finish = "matte"
+    elif std_val < 0.22:
+        color_finish = "soft"
+    elif entropy > 7.9 and std_val > 0.30:
+        color_finish = "vivid_textured"
+    else:
+        color_finish = "natural"
 
     image_hash = hashlib.sha256(image_bytes).hexdigest()
 
@@ -114,4 +140,11 @@ async def process_upload(image: UploadFile) -> ProcessedImage:
         pil_image=pil_image,
         filename=filename,
         content_type=image.content_type or "application/octet-stream",
+        
+        image_metadata={
+            "entropy": round(entropy, 3),
+            "vibrance": round(std_val, 3),
+            "color_finish": color_finish,
+            "noise_penalty": noise_penalty
+        }
     )

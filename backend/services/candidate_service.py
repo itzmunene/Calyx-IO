@@ -1,3 +1,4 @@
+import math
 from typing import Any, Dict, List, Tuple
 
 JSONDict = Dict[str, Any]
@@ -6,8 +7,12 @@ WEIGHTS = {
     "color": 2.0,
     "shape": 3.0,
     "pose": 1.5,
-    "reproductive": 5.0,
 }
+
+probability = 0.0
+trait_score = 0.0
+color_finish = None
+flower_size = "unknown"
 
 def _safe_set(value: Any) -> set[str]:
     if value is None:
@@ -16,37 +21,19 @@ def _safe_set(value: Any) -> set[str]:
         return {str(v).strip().lower() for v in value if str(v).strip()}
     return {str(value).strip().lower()}
 
+def softmax(scores: List[float]) -> List[float]:
+    exp_scores = [math.exp(s) for s in scores]
+    total = sum(exp_scores)
+    return [s / total for s in exp_scores]
 
 def _flatten_traits_for_db(traits: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "color_primary": traits.get("color_primary") or traits.get("petal_color_primary") or [],
-
-        "flower_size": traits.get("flower_size"),
-        "petal_count": traits.get("petal_count"),
-        "petal_shape_outer": traits.get("petal_shape_outer"),
-        "petal_shape_inner": traits.get("petal_shape_inner"),
-        "petal_overlap": None if traits.get("petal_overlap") == "moderate" else traits.get("petal_overlap"),
-        "petal_margin": traits.get("petal_margin"),
-        "bloom_openness": traits.get("bloom_openness"),
-
-        "centre_morphology": traits.get("centre_morphology"),
-        "stamen_visible": traits.get("stamen_visible"),
-        "anther_visible": traits.get("anther_visible"),
-        "stigma_visible": traits.get("stigma_visible"),
-
-        "petal_flow": traits.get("petal_flow"),
-    }
-
-def normalize_traits(traits: dict) -> dict:
-    return {
-        "color_primary": traits.get("color_primary") or traits.get("petal_color_primary", []),
-        "flower_size": traits.get("flower_size"),
         "petal_count": traits.get("petal_count"),
         "petal_shape_outer": traits.get("petal_shape_outer"),
         "petal_shape_inner": traits.get("petal_shape_inner"),
         "petal_overlap": traits.get("petal_overlap"),
-        "centre_morphology": traits.get("centre_morphology"),
-        "stamen_visible": traits.get("stamen_visible"),
+        "petal_margin": traits.get("petal_margin"),
+        "bloom_openness": traits.get("bloom_openness"),
     }
 
 def _score_overlap(extracted: set[str], candidate: set[str], weight: float) -> float:
@@ -78,6 +65,9 @@ def _score_color_traits(extracted: Dict[str, Any], candidate_traits: Dict[str, A
 
     score += _score_overlap(petal_primary, candidate_colors, 0.25)
     score += _score_overlap(petal_secondary, candidate_colors, 0.10)
+
+    if extracted.get("color_blending") == candidate_traits.get("color_blending"):
+        score += 0.12
 
     # fallback boost
     if score == 0.0:
@@ -189,46 +179,40 @@ def _score_reproductive_traits(extracted: Dict[str, Any], candidate: JSONDict) -
 def score_candidate(candidate: JSONDict, traits: Dict[str, Any]) -> float:
     candidate_traits = candidate.get("traits") or candidate
 
-    # 🔥 traits are FLAT
-    color_traits = traits
-    shape_traits = traits
-    pose_traits = traits
-    reproductive_traits = traits
-
     score = 0.0
 
-    # soft structural filtering
-    if shape_traits.get("flower_size") and candidate_traits.get("flower_size"):
-        if shape_traits["flower_size"] != candidate_traits["flower_size"]:
-            score -= 0.2
+    # ✅ ONLY SHAPE + POSE ACTIVE
 
-    # 🔥 HARD STRUCTURAL FILTER
-    if reproductive_traits.get("centre_morphology") == "filament_cluster_visible":
-        if candidate_traits.get("centre_morphology") == "simple_centre":
-            score -= 0.25
+    score += _score_shape_traits(traits, candidate_traits) * WEIGHTS["shape"]
+    score += _score_pose_traits(traits, candidate) * WEIGHTS["pose"]
 
-    # weighted scoring
-    score += _score_color_traits(color_traits, candidate_traits) * WEIGHTS["color"]
-    score += _score_shape_traits(shape_traits, candidate_traits) * WEIGHTS["shape"]
-    score += _score_pose_traits(pose_traits, candidate) * WEIGHTS["pose"]
-    score += _score_reproductive_traits(reproductive_traits, candidate) * WEIGHTS["reproductive"]
-
-    return round(score, 4)
+    return score
 
 
 def rank_candidates(candidates: List[JSONDict], traits: Dict[str, Any]) -> List[JSONDict]:
     ranked: List[JSONDict] = []
 
+    # 🔥 FIRST compute scores
     for candidate in candidates:
         candidate_copy = dict(candidate)
+
         score = score_candidate(candidate, traits)
 
         candidate_copy["trait_score"] = score
-        candidate_copy["confidence"] = min(score, 1.0)
+        candidate_copy["confidence"] = max(min(score, 1.0), 0.0)
 
         ranked.append(candidate_copy)
 
+    # 🔥 SORT FIRST
     ranked.sort(key=lambda c: c.get("trait_score", 0.0), reverse=True)
+
+    # 🔥 THEN compute softmax
+    scores = [c["trait_score"] for c in ranked]
+    probs = softmax(scores)
+
+    for i, c in enumerate(ranked):
+        c["probability"] = round(probs[i], 4)
+
     return ranked
 
 
@@ -238,17 +222,31 @@ async def resolve_candidates(
     embedding: List[float],
 ) -> Tuple[List[JSONDict], str, bool, Dict[str, Any]]:
 
-    # 1. Trait search (DB function)
-    flat_traits = _flatten_traits_for_db(traits)
-    print("DB TRAITS:", flat_traits)
+    print("\n================ TRAIT PIPELINE DEBUG ================")
 
+    # 🔥 RAW EXTRACTED TRAITS
+    print("\n[EXTRACTED TRAITS]")
+    for k, v in traits.items():
+        print(f"{k}: {v}")
+
+    # 🔥 FLATTENED FOR DB
+    flat_traits = _flatten_traits_for_db(traits)
+
+    print("\n[DB SEARCH TRAITS]")
+    for k, v in flat_traits.items():
+        print(f"{k}: {v}")
+
+    print("=====================================================\n")
+
+    # 1. Trait search
     candidates = await db.rpc(
         "search_by_traits",
         {"input_traits": flat_traits}
     )
 
     if not candidates:
-        # ❌ No trait matches → fallback to vector
+        print("[NO TRAIT MATCHES] → falling back to embedding")
+
         if embedding:
             fallback = await db.rpc(
                 "search_by_embedding",
@@ -258,14 +256,29 @@ async def resolve_candidates(
 
         return [], "no_match", False, traits
 
-    # ✅ Exact match
+    print(f"[CANDIDATES FOUND]: {len(candidates)}")
+
+    # 🔥 PRINT RAW DB TRAITS
+    for i, c in enumerate(candidates[:5]):
+        print(f"\n[DB CANDIDATE {i+1}] {c.get('scientific_name')}")
+        for k in flat_traits.keys():
+            print(f"  {k}: {c.get(k)}")
+
     if len(candidates) == 1:
         return candidates, "trait_exact", True, traits
 
-    # 🔍 Rank locally (your Python scoring)
+    # 🔍 Rank
     ranked = rank_candidates(candidates, traits)
 
-    # 🔍 Try embedding refinement
+    print("\n================ SCORING =================")
+
+    for i, c in enumerate(ranked[:5]):
+        print(f"\n[RANK {i+1}] {c.get('scientific_name')}")
+        print(f"Score: {c.get('trait_score'):.4f}")
+        print(f"Confidence: {c.get('confidence'):.4f}")
+
+    print("=========================================\n")
+
     if embedding:
         refined = await db.refine_with_embedding(ranked, embedding)
 
@@ -274,7 +287,4 @@ async def resolve_candidates(
                 return refined, "trait_elimination", True, traits
             return refined[:20], "trait_shortlist", False, traits
 
-    # ⚠️ fallback → ranked shortlist
     return ranked[:20], "trait_shortlist", False, traits
-
-    

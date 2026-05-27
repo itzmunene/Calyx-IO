@@ -39,7 +39,9 @@ export interface IdentificationResult {
   scientific_name: string;
   common_names: string[];
   confidence: number;
-  primary_image_url: string | null;
+  primary_image_url: string;
+
+  debug_image_url?: string; // NEW
   method?: string;
   traits_extracted?: Record<string, any>;
   alternatives?: AlternativeResult[];

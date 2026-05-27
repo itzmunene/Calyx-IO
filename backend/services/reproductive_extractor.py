@@ -88,20 +88,22 @@ def _find_reproductive_hotspot(
     sat = hsv[:, :, 1]
     val = hsv[:, :, 2]
 
+    # 🔥 FIX: remove overly dark stamen bias
+    dark_stamen_mask = (val < 0.35) & (sat > 0.25)
+
     warm_mask = ((hue >= 5) & (hue <= 40))
     sat_mask = sat > 0.28
     val_mask = val < 0.80
 
     hotspot_score = (
-        warm_mask.astype(np.float32) * 0.55 +
+        warm_mask.astype(np.float32) * 0.50 +
         sat_mask.astype(np.float32) * 0.20 +
         val_mask.astype(np.float32) * 0.10 +
-        np.clip(edges * 2.5, 0.0, 1.0) * 0.15
+        np.clip(edges * 2.5, 0.0, 1.0) * 0.20
     )
 
-    if hotspot_score.size == 0:
-        fallback_patch = _extract_patch(arr, centre_point, ratio=patch_ratio)
-        return (cx, cy), fallback_patch
+    # apply suppression
+    hotspot_score = np.where(dark_stamen_mask, hotspot_score * 0.5, hotspot_score)
 
     max_idx = np.unravel_index(np.argmax(hotspot_score), hotspot_score.shape)
     hy, hx = max_idx
@@ -110,7 +112,8 @@ def _find_reproductive_hotspot(
     hotspot_cy = float(sy1 + hy)
 
     patch = _extract_patch(arr, (hotspot_cx, hotspot_cy), ratio=patch_ratio)
-    return (float(hotspot_cx), float(hotspot_cy)), patch
+
+    return (hotspot_cx, hotspot_cy), patch
 
 
 def extract_reproductive_traits(

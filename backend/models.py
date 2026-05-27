@@ -54,6 +54,7 @@ class IdentificationResponse(BaseModel):
     common_names: List[str]
     confidence: float
     primary_image_url: Optional[str] = None
+    debug_image_url: Optional[str] = None  # NEW
     method: Optional[str] = None
     traits_extracted: Optional[dict] = None
     alternatives: Optional[list] = None
