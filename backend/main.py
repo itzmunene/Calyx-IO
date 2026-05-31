@@ -19,7 +19,7 @@ app = FastAPI(
 )
 
 
-# 🔥 FIX CORS ORIGINS (FORCE LIST)
+# FIX CORS ORIGINS (ADD YOUR FRONTEND URLS HERE)
 origins = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
@@ -28,11 +28,11 @@ origins = [
 ]
 
 
-# 🔥 ADD CORS (CORRECTLY)
+# ADD CORS (CORRECTLY)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=False,  # 🔥 IMPORTANT
+    allow_credentials=True, 
     allow_methods=["*"],
     allow_headers=["*"],
 )
